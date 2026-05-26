@@ -1,4 +1,6 @@
 from app.agents.base import BaseAgent
+from app.agents.auditor import AuditorAgent
+from app.agents.red_team import RedTeamAgent
 from app.detectors.factory import create_default_pipeline
 from app.event_store import EventStore
 from app.gateway.base import BaseGateway
@@ -9,27 +11,46 @@ from app.tools.base import BaseTool
 from app.websocket_manager import websocket_manager
 
 
-# Topology nodes
-gateway = BaseGateway("Gateway", message_bus)
+# ── Shared LLM client ──────────────────────────────────────────
 llm_client = get_llm_client()
-agent_a = BaseAgent("Agent_A", message_bus, llm_client=llm_client)
-agent_b = BaseAgent("Agent_B", message_bus, llm_client=llm_client)
-tool_search = BaseTool("Tool_Search", message_bus)
-tool_memory = BaseTool("Tool_Memory", message_bus)
 
-# Monitor: pluggable 3-level detector pipeline attached to the message bus
+# ── Entry point ────────────────────────────────────────────────
+gateway = BaseGateway("Gateway", message_bus)
+
+# ── Blue Team: Task Agents (business logic executors) ──────────
+task_agent_a = BaseAgent("Task_Agent_A", message_bus, llm_client=llm_client)
+task_agent_b = BaseAgent("Task_Agent_B", message_bus, llm_client=llm_client)
+
+# ── Blue Team: Auditor (cross-validation watchdog) ─────────────
+auditor = AuditorAgent(
+    "Auditor_Prime",
+    message_bus,
+    llm_client=llm_client,
+    protected_nodes=["Task_Agent_A", "Task_Agent_B"],
+)
+
+# ── Red Team: Automated internal attacker ──────────────────────
+red_agent = RedTeamAgent(
+    "Red_Attacker",
+    message_bus,
+    llm_client=llm_client,
+    attack_interval_seconds=5.0,
+    max_attacks=15,
+)
+
+# ── Dual-channel Tools ─────────────────────────────────────────
+tool_rag = BaseTool("Tool_RAG_Vector", message_bus)
+tool_kg = BaseTool("Tool_KnowledgeGraph", message_bus)
+
+# ── Optional: L1+L2 fast filter (catches obvious attacks before Auditor) ──
 pipeline = create_default_pipeline(llm_client=llm_client, bus=message_bus)
 message_bus.attach_monitor(pipeline.inspect)
-
-# Subscribe a lightweight monitor node for topology visualization
-async def _monitor_handler(event: AgentEvent) -> None:
-    pass  # events are already inspected by the pipeline hook
-
-message_bus.subscribe("Monitor_Node", _monitor_handler)
 
 # WebSocket broadcast
 message_bus.attach_broadcast_hook(websocket_manager.broadcast)
 
+
+# ── Helpers ────────────────────────────────────────────────────
 
 async def init_event_store() -> None:
     store = EventStore()
@@ -38,8 +59,8 @@ async def init_event_store() -> None:
 
 
 async def run_gateway_to_agent(payload: str) -> AgentEvent | None:
-    return await gateway.submit_task("Agent_A", payload)
+    return await gateway.submit_task("Task_Agent_A", payload)
 
 
 async def run_agent_to_tool(payload: str) -> AgentEvent | None:
-    return await agent_a.call_tool("Tool_Search", payload)
+    return await task_agent_a.call_tool("Tool_RAG_Vector", payload)

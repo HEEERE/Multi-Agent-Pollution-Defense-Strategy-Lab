@@ -1,7 +1,7 @@
 // ── Event types ──────────────────────────────────────────────
 
-export type EventType = "input" | "communication" | "tool_call" | "intervention";
-export type EventStatus = "safe" | "exposed" | "infected" | "quarantined" | "recovered";
+export type EventType = "input" | "communication" | "tool_call" | "intervention" | "challenge";
+export type EventStatus = "safe" | "exposed" | "challenged" | "infected" | "quarantined" | "recovered";
 export type EventSeverity = "info" | "warning" | "critical";
 export type MonitorLevel = 0 | 1 | 2 | 3;
 export type ActionTaken = "none" | "alert" | "block" | "quarantine" | "isolate";
@@ -77,7 +77,7 @@ export interface TopologyConfig {
 
 // ── Detector config ─────────────────────────────────────────
 
-export type DetectorType = "regex" | "rag_feature" | "llm_intent";
+export type DetectorType = "regex" | "rag_feature" | "semantic" | "llm_intent";
 
 export interface DetectorConfig {
   detector_id: string;

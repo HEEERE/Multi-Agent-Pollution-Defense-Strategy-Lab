@@ -40,6 +40,21 @@ body {
   }
 }
 
+@keyframes challenged-pulse {
+  0%, 100% {
+    box-shadow: 0 0 0 0 rgba(249, 115, 22, 0.4);
+    border-color: rgba(249, 115, 22, 0.5);
+  }
+  50% {
+    box-shadow: 0 0 0 10px rgba(249, 115, 22, 0);
+    border-color: rgba(249, 115, 22, 1);
+  }
+}
+
+.node-challenged {
+  animation: challenged-pulse 0.9s ease-in-out infinite;
+}
+
 @keyframes infection-ripple {
   0% {
     box-shadow: 0 0 0 0 rgba(220, 38, 38, 0.35);

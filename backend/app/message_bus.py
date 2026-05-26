@@ -39,6 +39,7 @@ class MessageBus:
 
     def __init__(self, max_history: int = 500) -> None:
         self._handlers: dict[str, EventHandler] = {}
+        self._all_listeners: list[EventHandler] = []
         self._monitors: list[MonitorHook] = []
         self._broadcast_hooks: list[BroadcastHook] = []
         self.history: deque[AgentEvent] = deque(maxlen=max_history)
@@ -49,6 +50,11 @@ class MessageBus:
 
     def subscribe(self, node_id: str, handler: EventHandler) -> None:
         self._handlers[node_id] = handler
+
+    def subscribe_all(self, handler: EventHandler) -> None:
+        """Register a handler that receives ALL events regardless of target_node.
+        Used by Auditor agents to monitor the entire bus for threat detection."""
+        self._all_listeners.append(handler)
 
     def unsubscribe(self, node_id: str) -> None:
         self._handlers.pop(node_id, None)
@@ -94,6 +100,12 @@ class MessageBus:
         target_handler = self._handlers.get(inspected_event.target_node)
         if target_handler is not None:
             await target_handler(inspected_event)
+
+        for listener in self._all_listeners:
+            try:
+                await listener(inspected_event)
+            except Exception:
+                pass
 
         return inspected_event
 

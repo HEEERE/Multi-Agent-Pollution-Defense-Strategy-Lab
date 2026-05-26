@@ -101,7 +101,7 @@ export function LiveMonitor() {
           </div>
           <div className="flex items-center gap-3 text-xs font-medium text-slate-600">
             <StatusLegend label="Safe" color={statusPalette.safe.node} />
-            <StatusLegend label="Exposed" color="#f59e0b" />
+            <StatusLegend label="Challenged" color={statusPalette.challenged.node} />
             <StatusLegend label="Infected" color={statusPalette.infected.node} />
             <StatusLegend label="Quarantined" color={statusPalette.quarantined.node} />
           </div>

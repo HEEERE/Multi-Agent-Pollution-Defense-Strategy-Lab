@@ -6,6 +6,7 @@ import type { NodeData } from "../types";
 type AgentGraphNode = Node<NodeData, "agentNode">;
 
 function statusClass(status: string): string {
+  if (status === "challenged") return "node-challenged";
   if (status === "infected") return "node-infected";
   if (status === "quarantined") return "node-quarantined";
   if (status === "recovered") return "node-recovered";

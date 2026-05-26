@@ -21,11 +21,13 @@ class EventType(StrEnum):
     COMMUNICATION = "communication"
     TOOL_CALL = "tool_call"
     INTERVENTION = "intervention"
+    CHALLENGE = "challenge"
 
 
 class EventStatus(StrEnum):
     SAFE = "safe"
     EXPOSED = "exposed"
+    CHALLENGED = "challenged"
     INFECTED = "infected"
     QUARANTINED = "quarantined"
     RECOVERED = "recovered"

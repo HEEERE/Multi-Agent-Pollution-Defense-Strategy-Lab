@@ -13,6 +13,11 @@ export const statusPalette: Record<EventStatus, { node: string; edge: string; te
     edge: "#fbbf24",
     text: "Exposed",
   },
+  challenged: {
+    node: "#f97316",
+    edge: "#fb923c",
+    text: "Challenged",
+  },
   infected: {
     node: "#dc2626",
     edge: "#ef4444",
@@ -31,52 +36,74 @@ export const statusPalette: Record<EventStatus, { node: string; edge: string; te
 };
 
 export const initialNodes: Node<NodeData>[] = [
+  // ── Entry ──
   {
     id: "Gateway",
     type: "agentNode",
-    position: { x: 60, y: 180 },
-    data: { label: "Gateway", role: "Gateway", subtitle: "Single system entry point", status: "safe" },
+    position: { x: 60, y: 250 },
+    data: { label: "Gateway", role: "Entry Point", subtitle: "External task submission", status: "safe" },
+  },
+  // ── Blue Team: Task Agents ──
+  {
+    id: "Task_Agent_A",
+    type: "agentNode",
+    position: { x: 340, y: 100 },
+    data: { label: "Task_Agent_A", role: "Blue Executor", subtitle: "Business logic & reasoning", status: "safe" },
   },
   {
-    id: "Agent_A",
+    id: "Task_Agent_B",
     type: "agentNode",
-    position: { x: 360, y: 80 },
-    data: { label: "Agent_A", role: "Agent", subtitle: "Reasoning and context handling", status: "safe" },
+    position: { x: 340, y: 400 },
+    data: { label: "Task_Agent_B", role: "Blue Executor", subtitle: "Cascade collaboration node", status: "safe" },
+  },
+  // ── Blue Team: Auditor ──
+  {
+    id: "Auditor_Prime",
+    type: "agentNode",
+    position: { x: 620, y: 250 },
+    data: { label: "Auditor_Prime", role: "Blue Auditor", subtitle: "Cross-validation watchdog", status: "safe" },
+  },
+  // ── Red Team ──
+  {
+    id: "Red_Attacker",
+    type: "agentNode",
+    position: { x: 60, y: 480 },
+    data: { label: "Red_Attacker", role: "Red Team", subtitle: "Continuous internal attack testing", status: "safe" },
+  },
+  // ── Tools ──
+  {
+    id: "Tool_RAG_Vector",
+    type: "agentNode",
+    position: { x: 820, y: 100 },
+    data: { label: "Tool_RAG", role: "Tool", subtitle: "Vector search & retrieval", status: "safe" },
   },
   {
-    id: "Agent_B",
+    id: "Tool_KnowledgeGraph",
     type: "agentNode",
-    position: { x: 360, y: 280 },
-    data: { label: "Agent_B", role: "Agent", subtitle: "Cascade collaboration node", status: "safe" },
-  },
-  {
-    id: "Tool_Search",
-    type: "agentNode",
-    position: { x: 680, y: 70 },
-    data: { label: "Tool_Search", role: "Tool", subtitle: "Search and evidence extraction", status: "safe" },
-  },
-  {
-    id: "Tool_Memory",
-    type: "agentNode",
-    position: { x: 680, y: 300 },
-    data: { label: "Tool_Memory", role: "Tool", subtitle: "Shared memory read/write", status: "safe" },
-  },
-  {
-    id: "Monitor_Node",
-    type: "agentNode",
-    position: { x: 360, y: 470 },
-    data: { label: "Monitor_Node", role: "Monitor", subtitle: "Bus security interception", status: "safe" },
+    position: { x: 820, y: 400 },
+    data: { label: "Tool_KG", role: "Tool", subtitle: "Knowledge graph query", status: "safe" },
   },
 ];
 
 export const initialEdges: Edge[] = [
-  edge("Gateway-Agent_A", "Gateway", "Agent_A"),
-  edge("Gateway-Agent_B", "Gateway", "Agent_B"),
-  edge("Agent_A-Agent_B", "Agent_A", "Agent_B"),
-  edge("Agent_A-Tool_Search", "Agent_A", "Tool_Search"),
-  edge("Agent_B-Tool_Memory", "Agent_B", "Tool_Memory"),
-  edge("MessageBus-Monitor_A", "Agent_A", "Monitor_Node", true),
-  edge("MessageBus-Monitor_B", "Agent_B", "Monitor_Node", true),
+  // Gateway → Task Agents
+  edge("gw-task_a", "Gateway", "Task_Agent_A"),
+  edge("gw-task_b", "Gateway", "Task_Agent_B"),
+
+  // Task Agents ↔ each other
+  edge("ta-tb", "Task_Agent_A", "Task_Agent_B"),
+
+  // Task Agents → Tools
+  edge("ta-rag", "Task_Agent_A", "Tool_RAG_Vector"),
+  edge("tb-kg", "Task_Agent_B", "Tool_KnowledgeGraph"),
+
+  // Task Agents → Auditor (all communications monitored, dashed)
+  edge("ta-audit", "Task_Agent_A", "Auditor_Prime", true),
+  edge("tb-audit", "Task_Agent_B", "Auditor_Prime", true),
+
+  // Red Team → Task Agents (attack injection)
+  edge("red-ta", "Red_Attacker", "Task_Agent_A", true),
+  edge("red-tb", "Red_Attacker", "Task_Agent_B", true),
 ];
 
 function edge(id: string, source: string, target: string, dashed = false): Edge {
