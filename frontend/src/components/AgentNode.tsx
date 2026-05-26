@@ -5,13 +5,20 @@ import type { NodeData } from "../types";
 
 type AgentGraphNode = Node<NodeData, "agentNode">;
 
+function statusClass(status: string): string {
+  if (status === "infected") return "node-infected";
+  if (status === "quarantined") return "node-quarantined";
+  if (status === "recovered") return "node-recovered";
+  return "";
+}
+
 export function AgentNode({ data }: NodeProps<AgentGraphNode>) {
   const status = data.status ?? "safe";
   const palette = statusPalette[status];
 
   return (
     <div
-      className="w-[210px] rounded-lg border bg-white px-4 py-3 shadow-signal transition-colors"
+      className={`w-[210px] rounded-lg border bg-white px-4 py-3 shadow-signal transition-colors ${statusClass(status)}`}
       style={{ borderColor: palette.node }}
     >
       <Handle type="target" position={Position.Left} className="!h-2.5 !w-2.5" />

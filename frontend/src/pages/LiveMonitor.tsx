@@ -14,6 +14,7 @@ import "@xyflow/react/dist/style.css";
 
 import { AgentNode } from "../components/AgentNode";
 import { EventConsole } from "../components/EventConsole";
+import { MonitorStatusPanel } from "../components/MonitorStatusPanel";
 import { NodeDetailPanel } from "../components/NodeDetailPanel";
 import { PlaybookPanel } from "../components/PlaybookPanel";
 import { initialEdges, initialNodes, statusPalette } from "../graph";
@@ -133,6 +134,7 @@ export function LiveMonitor() {
               nodeColor={(node) => statusPalette[(node.data as NodeData).status]?.node ?? "#16a34a"}
             />
           </ReactFlow>
+          <MonitorStatusPanel events={events} />
         </div>
       </section>
       <EventConsole events={events} connected={connected} />

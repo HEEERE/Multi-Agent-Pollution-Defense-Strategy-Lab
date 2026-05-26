@@ -1,22 +1,33 @@
 from app.agents.base import BaseAgent
+from app.detectors.factory import create_default_pipeline
 from app.event_store import EventStore
 from app.gateway.base import BaseGateway
 from app.llm.factory import get_llm_client
 from app.message_bus import message_bus
-from app.monitoring.security_monitor import SecurityMonitorNode
 from app.schemas import AgentEvent
 from app.tools.base import BaseTool
 from app.websocket_manager import websocket_manager
 
 
+# Topology nodes
 gateway = BaseGateway("Gateway", message_bus)
 llm_client = get_llm_client()
 agent_a = BaseAgent("Agent_A", message_bus, llm_client=llm_client)
 agent_b = BaseAgent("Agent_B", message_bus, llm_client=llm_client)
 tool_search = BaseTool("Tool_Search", message_bus)
 tool_memory = BaseTool("Tool_Memory", message_bus)
-monitor = SecurityMonitorNode("Monitor_Node", message_bus)
 
+# Monitor: pluggable 3-level detector pipeline attached to the message bus
+pipeline = create_default_pipeline(llm_client=llm_client, bus=message_bus)
+message_bus.attach_monitor(pipeline.inspect)
+
+# Subscribe a lightweight monitor node for topology visualization
+async def _monitor_handler(event: AgentEvent) -> None:
+    pass  # events are already inspected by the pipeline hook
+
+message_bus.subscribe("Monitor_Node", _monitor_handler)
+
+# WebSocket broadcast
 message_bus.attach_broadcast_hook(websocket_manager.broadcast)
 
 

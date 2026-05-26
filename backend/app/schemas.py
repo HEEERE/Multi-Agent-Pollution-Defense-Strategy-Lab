@@ -124,6 +124,7 @@ class TopologyConfig(BaseModel):
 class DetectorType(StrEnum):
     REGEX = "regex"
     RAG_FEATURE = "rag_feature"
+    SEMANTIC = "semantic"
     LLM_INTENT = "llm_intent"
 
 
@@ -187,6 +188,31 @@ class ExperimentRun(BaseModel):
     started_at: float | None = None
     completed_at: float | None = None
     error_message: str | None = None
+
+
+# ── Benchmark ─────────────────────────────────────────────────
+
+class LevelStats(BaseModel):
+    level: MonitorLevel
+    total_tested: int = 0
+    threats_detected: int = 0
+    false_positives: int = 0
+    true_negatives: int = 0
+    recall: float = 0.0
+    fpr: float = 0.0
+    avg_latency_ms: float = 0.0
+    p95_latency_ms: float = 0.0
+
+
+class BenchmarkReport(BaseModel):
+    report_id: str
+    timestamp: float
+    pipeline_config: dict[str, Any] = Field(default_factory=dict)
+    total_payloads: int = 0
+    ground_truth_threats: int = 0
+    per_level: list[LevelStats] = Field(default_factory=list)
+    overall_recall: float = 0.0
+    overall_fpr: float = 0.0
 
 
 # ── Trace summary ────────────────────────────────────────────

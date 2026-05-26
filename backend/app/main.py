@@ -20,7 +20,12 @@ from app.schemas import (
     ReplaySession,
     ReplayState,
 )
+from app.benchmark.runner import BenchmarkRunner
+from app.llm.factory import get_llm_client
+from app.schemas import BenchmarkReport
 from app.websocket_manager import websocket_manager
+
+_benchmark_reports: dict[str, BenchmarkReport] = {}
 
 
 @asynccontextmanager
@@ -304,6 +309,34 @@ async def get_replay_state(session_id: str) -> dict:
     if engine is None:
         return {"error": "session not found"}
     return engine.get_state().model_dump()
+
+
+# ── Benchmark ────────────────────────────────────────────────
+
+@app.post("/api/benchmark/run")
+async def run_benchmark() -> dict:
+    runner = BenchmarkRunner(llm_client=get_llm_client(), event_store=get_event_store())
+    report = await runner.run()
+    _benchmark_reports[report.report_id] = report
+    return report.model_dump(mode="json")
+
+
+@app.get("/api/benchmark/reports")
+async def list_benchmark_reports() -> list[dict]:
+    return [
+        {"report_id": r.report_id, "timestamp": r.timestamp,
+         "total_payloads": r.total_payloads, "overall_recall": r.overall_recall,
+         "overall_fpr": r.overall_fpr}
+        for r in _benchmark_reports.values()
+    ]
+
+
+@app.get("/api/benchmark/reports/{report_id}")
+async def get_benchmark_report(report_id: str) -> dict | None:
+    report = _benchmark_reports.get(report_id)
+    if report is None:
+        return None
+    return report.model_dump(mode="json")
 
 
 # ── WebSocket ────────────────────────────────────────────────

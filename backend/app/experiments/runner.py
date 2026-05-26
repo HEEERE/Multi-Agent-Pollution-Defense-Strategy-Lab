@@ -52,7 +52,7 @@ class ExperimentRunner:
 
             # Build detector pipeline
             if config.detector_pipeline.detectors:
-                pipeline = create_pipeline(config.detector_pipeline, self.llm_client)
+                pipeline = create_pipeline(config.detector_pipeline, self.llm_client, bus)
                 bus.attach_monitor(pipeline.inspect)
 
             # Run simulation

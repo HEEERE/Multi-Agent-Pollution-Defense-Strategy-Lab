@@ -17,11 +17,13 @@ class DetectorPipeline:
         short_circuit: bool = True,
         log_all: bool = True,
         min_severity_for_llm: EventSeverity = EventSeverity.WARNING,
+        bus: MessageBus | None = None,
     ) -> None:
         self.detectors = detectors
         self.short_circuit = short_circuit
         self.log_all = log_all
         self.min_severity_for_llm = min_severity_for_llm
+        self._bus = bus
 
     async def inspect(self, event: AgentEvent) -> AgentEvent | None:
         context = DetectionContext(event=event)
@@ -99,7 +101,23 @@ class DetectorPipeline:
         return final_event
 
     async def _emit_intervention(self, event: AgentEvent, reason: str) -> None:
-        pass
+        if self._bus is None:
+            return
+        intervention = AgentEvent(
+            event_type=EventType.INTERVENTION,
+            source_node="Monitor",
+            target_node=event.source_node,
+            payload_snippet=reason,
+            status=event.status,
+            action_taken=event.action_taken,
+            severity=event.severity,
+            monitor_level=event.monitor_level,
+            metadata={
+                "triggered_by": event.event_id,
+                "detection": event.metadata.get("detection", {}),
+            },
+        )
+        await self._bus.emit(intervention)
 
     def _allowed_severities(self) -> list[str]:
         levels = ["info", "warning", "critical"]

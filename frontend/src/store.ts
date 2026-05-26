@@ -52,6 +52,10 @@ export const useStore = create<AppState>((set) => ({
   setEdges: (edges) => set({ edges }),
   resetTopology: () => set({ nodes: initialNodes, edges: initialEdges, events: [] }),
   applyEvent: (event) => {
+    const isThreat = event.monitor_level > 0 && event.action_taken !== "none";
+    const isIntervention = event.event_type === "intervention";
+    const edgeClass = isIntervention ? "monitor-trail" : isThreat ? "contaminated" : undefined;
+
     set((state) => ({
       events: [event, ...state.events].slice(0, 80),
       nodes: state.nodes.map((node) =>
@@ -64,6 +68,7 @@ export const useStore = create<AppState>((set) => ({
           ? {
               ...edge,
               animated: true,
+              className: edgeClass,
               style: {
                 ...edge.style,
                 stroke: statusPalette[event.status]?.edge ?? "#22c55e",
@@ -77,7 +82,7 @@ export const useStore = create<AppState>((set) => ({
       set((state) => ({
         edges: state.edges.map((edge) =>
           edge.source === event.source_node && edge.target === event.target_node
-            ? { ...edge, animated: false, style: { ...edge.style, strokeWidth: 2 } }
+            ? { ...edge, animated: false, className: undefined, style: { ...edge.style, strokeWidth: 2 } }
             : edge,
         ),
       }));

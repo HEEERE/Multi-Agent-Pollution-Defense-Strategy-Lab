@@ -3,6 +3,22 @@ import { AlertTriangle, Ban, CircleCheck, ShieldAlert } from "lucide-react";
 import { statusPalette } from "../graph";
 import type { AgentEvent } from "../types";
 
+const LEVEL_LABELS: Record<number, { text: string; bg: string; border: string }> = {
+  1: { text: "L1 Regex", bg: "bg-blue-50", border: "border-blue-400" },
+  2: { text: "L2 Semantic", bg: "bg-orange-50", border: "border-orange-400" },
+  3: { text: "L3 LLM", bg: "bg-purple-50", border: "border-purple-400" },
+};
+
+function LevelBadge({ level }: { level: number }) {
+  const info = LEVEL_LABELS[level];
+  if (!info) return null;
+  return (
+    <span className={`ml-1.5 inline-flex items-center rounded border ${info.border} ${info.bg} px-1.5 py-0.5 text-[10px] font-bold uppercase tracking-wide`}>
+      {info.text}
+    </span>
+  );
+}
+
 interface EventConsoleProps {
   events: AgentEvent[];
   connected: boolean;
@@ -36,9 +52,11 @@ export function EventConsole({ events, connected }: EventConsoleProps) {
 function EventRow({ event }: { event: AgentEvent }) {
   const palette = statusPalette[event.status];
   const Icon = event.action_taken === "block" ? Ban : event.action_taken === "alert" ? ShieldAlert : event.status === "safe" ? CircleCheck : AlertTriangle;
+  const isIntercepted = event.monitor_level > 0 && event.action_taken !== "none";
+  const leftBorder = isIntercepted ? (LEVEL_LABELS[event.monitor_level]?.border ?? "border-slate-300") : "border-slate-200";
 
   return (
-    <article className="rounded-lg border border-slate-200 bg-slate-50 p-3">
+    <article className={`rounded-lg border border-l-4 bg-slate-50 p-3 ${leftBorder}`}>
       <div className="flex items-start gap-3">
         <div className="mt-0.5 rounded border bg-white p-1.5" style={{ color: palette.node, borderColor: palette.edge }}>
           <Icon size={15} />
@@ -48,16 +66,31 @@ function EventRow({ event }: { event: AgentEvent }) {
             <span>{formatTime(event.timestamp)}</span>
             <span>{event.event_type}</span>
             <span style={{ color: palette.node }}>{palette.text}</span>
+            {event.monitor_level > 0 && <LevelBadge level={event.monitor_level} />}
           </div>
           <div className="mt-1 text-sm font-semibold text-slate-900">
             {event.source_node} {"->"} {event.target_node}
           </div>
           <p className="mt-2 break-words text-xs leading-5 text-slate-600">{event.payload_snippet}</p>
-          <div className="mt-2 text-xs font-medium text-slate-700">action_taken: {event.action_taken}</div>
+          <div className="mt-2 text-xs font-medium text-slate-700">
+            action: {event.action_taken}
+            {detectionReason(event.metadata) && (
+              <span className="ml-2 text-slate-500">({detectionReason(event.metadata)})</span>
+            )}
+          </div>
         </div>
       </div>
     </article>
   );
+}
+
+function detectionReason(metadata: Record<string, unknown> | undefined): string | null {
+  if (!metadata) return null;
+  const det = metadata.detection;
+  if (det && typeof det === "object" && "reason" in det) {
+    return String((det as Record<string, unknown>).reason ?? "");
+  }
+  return null;
 }
 
 function formatTime(timestamp: number) {
