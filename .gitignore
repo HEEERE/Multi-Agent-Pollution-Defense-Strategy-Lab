@@ -1,0 +1,36 @@
+# Python
+.venv/
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+*.egg-info/
+
+# Environment
+.env
+
+# Node / Frontend
+node_modules/
+dist/
+build/
+.npm-cache/
+
+# Database (runtime-generated)
+*.db
+*.db-shm
+*.db-wal
+
+# IDE
+.vscode/
+.idea/
+
+# Claude Code local config
+.claude/
+
+# Logs
+*.log
+
+# OS
+.DS_Store
+Thumbs.db

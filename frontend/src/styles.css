@@ -1,0 +1,103 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+* {
+  box-sizing: border-box;
+}
+
+html,
+body,
+#root {
+  height: 100%;
+  margin: 0;
+}
+
+body {
+  overflow: hidden;
+}
+
+.react-flow__edge.animated path {
+  stroke-dasharray: 8;
+  animation: flow-pulse 0.85s linear infinite;
+}
+
+.react-flow__controls {
+  border: 1px solid #cbd5e1;
+  box-shadow: none;
+}
+
+.react-flow__controls-button {
+  border-bottom: 1px solid #cbd5e1;
+}
+
+@keyframes flow-pulse {
+  from {
+    stroke-dashoffset: 24;
+  }
+  to {
+    stroke-dashoffset: 0;
+  }
+}
+
+@keyframes infection-ripple {
+  0% {
+    box-shadow: 0 0 0 0 rgba(220, 38, 38, 0.35);
+  }
+  100% {
+    box-shadow: 0 0 0 12px rgba(220, 38, 38, 0);
+  }
+}
+
+@keyframes quarantine-pulse {
+  0%, 100% {
+    opacity: 0.7;
+  }
+  50% {
+    opacity: 1;
+  }
+}
+
+@keyframes recover-glow {
+  0% {
+    box-shadow: 0 0 0 0 rgba(8, 145, 178, 0.4);
+  }
+  100% {
+    box-shadow: 0 0 0 10px rgba(8, 145, 178, 0);
+  }
+}
+
+.node-infected {
+  animation: infection-ripple 1.2s ease-out;
+}
+
+.node-quarantined {
+  animation: quarantine-pulse 2s ease-in-out infinite;
+}
+
+.node-recovered {
+  animation: recover-glow 1s ease-out;
+}
+
+.react-flow__edge.contaminated path {
+  stroke: #ef4444;
+  stroke-width: 2.5;
+}
+
+.react-flow__edge.monitor-trail path {
+  stroke: #9ca3af;
+  stroke-dasharray: 6 6;
+  stroke-width: 1.5;
+}
+
+@media (max-width: 960px) {
+  main {
+    grid-template-columns: 1fr;
+    grid-template-rows: minmax(520px, 1fr) 360px;
+  }
+
+  aside {
+    border-left: 0;
+    border-top: 1px solid #e2e8f0;
+  }
+}
