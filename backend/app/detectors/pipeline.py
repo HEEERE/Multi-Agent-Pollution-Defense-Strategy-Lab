@@ -1,4 +1,5 @@
 from app.detectors.base import BaseDetector, DetectionContext
+from app.detectors.honeypot import HoneyPotRouter
 from app.message_bus import MessageBus
 from app.schemas import (
     ActionTaken,
@@ -64,6 +65,21 @@ class DetectorPipeline:
             })
 
             if not result.is_threat:
+                # Check gray-zone: confidence in [0.50, 0.75) → honeypot
+                if HoneyPotRouter.should_decoy(result):
+                    final_event = HoneyPotRouter.redirect_event(final_event, result)
+                    if final_event.metadata.get("honeypot"):
+                        detection_log.append({
+                            "detector_id": det.detector_id,
+                            "level": det.level.value,
+                            "is_threat": False,
+                            "confidence": result.confidence,
+                            "reason": result.reason,
+                            "action": ActionTaken.DECOY.value,
+                            "honeypot_routed": True,
+                        })
+                        await self._emit_intervention(final_event,
+                            f"Gray-zone (conf={result.confidence:.2f}) → routed to honeypot")
                 continue
 
             action = result.suggested_action

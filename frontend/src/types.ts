@@ -1,10 +1,10 @@
 // ── Event types ──────────────────────────────────────────────
 
 export type EventType = "input" | "communication" | "tool_call" | "intervention" | "challenge";
-export type EventStatus = "safe" | "exposed" | "challenged" | "infected" | "quarantined" | "recovered";
+export type EventStatus = "safe" | "exposed" | "challenged" | "honeypotted" | "infected" | "quarantined" | "recovered";
 export type EventSeverity = "info" | "warning" | "critical";
 export type MonitorLevel = 0 | 1 | 2 | 3;
-export type ActionTaken = "none" | "alert" | "block" | "quarantine" | "isolate";
+export type ActionTaken = "none" | "alert" | "block" | "quarantine" | "isolate" | "decoy";
 export type ActionPolicy = "alert" | "block" | "quarantine" | "isolate";
 
 export interface AgentEvent {

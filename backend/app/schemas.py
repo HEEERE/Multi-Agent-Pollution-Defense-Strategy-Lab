@@ -28,6 +28,7 @@ class EventStatus(StrEnum):
     SAFE = "safe"
     EXPOSED = "exposed"
     CHALLENGED = "challenged"
+    HONEYPOTTED = "honeypotted"
     INFECTED = "infected"
     QUARANTINED = "quarantined"
     RECOVERED = "recovered"
@@ -52,6 +53,7 @@ class ActionTaken(StrEnum):
     BLOCK = "block"
     QUARANTINE = "quarantine"
     ISOLATE = "isolate"
+    DECOY = "decoy"
 
 
 class ActionPolicy(StrEnum):
@@ -247,3 +249,25 @@ class ReplaySession(BaseModel):
     total_events: int = 0
     speed_multiplier: float = 1.0
     current_timestamp: float | None = None
+
+
+# ── Honeypot Intelligence ──────────────────────────────────────
+
+class HoneyPotRecord(BaseModel):
+    turn: int
+    attacker_input: str
+    agent_response: str
+    tool_calls: list[str] = Field(default_factory=list)
+    detected_technique: str = ""
+    timestamp: float = Field(default_factory=time)
+
+
+class ThreatIntelReport(BaseModel):
+    report_id: str = Field(default_factory=new_id)
+    honeypot_session_id: str = ""
+    captured_at: float = Field(default_factory=time)
+    attack_chain: list[HoneyPotRecord] = Field(default_factory=list)
+    extracted_techniques: list[str] = Field(default_factory=list)
+    novel_payloads: list[str] = Field(default_factory=list)
+    total_turns: int = 0
+    recommended_action: str = ""

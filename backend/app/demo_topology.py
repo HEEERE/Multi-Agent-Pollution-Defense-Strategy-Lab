@@ -1,5 +1,6 @@
 from app.agents.base import BaseAgent
 from app.agents.auditor import AuditorAgent
+from app.agents.honeypot import HoneypotAgent
 from app.agents.red_team import RedTeamAgent
 from app.detectors.factory import create_default_pipeline
 from app.event_store import EventStore
@@ -8,6 +9,7 @@ from app.llm.factory import get_llm_client
 from app.message_bus import message_bus
 from app.schemas import AgentEvent
 from app.tools.base import BaseTool
+from app.tools.fake_tool import FakeTool
 from app.websocket_manager import websocket_manager
 
 
@@ -38,11 +40,18 @@ red_agent = RedTeamAgent(
     max_attacks=15,
 )
 
-# ── Dual-channel Tools ─────────────────────────────────────────
+# ── Honeypot: Gray-zone intelligence gathering ─────────────────
+honeypot = HoneypotAgent("Honeypot_Agent", message_bus, llm_client=llm_client)
+
+# ── Real Tools ─────────────────────────────────────────────────
 tool_rag = BaseTool("Tool_RAG_Vector", message_bus)
 tool_kg = BaseTool("Tool_KnowledgeGraph", message_bus)
 
-# ── Optional: L1+L2 fast filter (catches obvious attacks before Auditor) ──
+# ── Fake Tools (honeypot sandbox) ──────────────────────────────
+fake_rag = FakeTool("FakeTool_RAG", message_bus, tool_type="rag")
+fake_kg = FakeTool("FakeTool_KG", message_bus, tool_type="kg")
+
+# ── Pipeline: L1 blocker + L2/L3 gray-zone → honeypot router ──
 pipeline = create_default_pipeline(llm_client=llm_client, bus=message_bus)
 message_bus.attach_monitor(pipeline.inspect)
 

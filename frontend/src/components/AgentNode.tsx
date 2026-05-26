@@ -7,6 +7,7 @@ type AgentGraphNode = Node<NodeData, "agentNode">;
 
 function statusClass(status: string): string {
   if (status === "challenged") return "node-challenged";
+  if (status === "honeypotted") return "node-honeypotted";
   if (status === "infected") return "node-infected";
   if (status === "quarantined") return "node-quarantined";
   if (status === "recovered") return "node-recovered";

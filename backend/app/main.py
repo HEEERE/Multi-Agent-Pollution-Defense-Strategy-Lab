@@ -4,7 +4,12 @@ from fastapi import FastAPI, WebSocket, WebSocketDisconnect
 from fastapi.middleware.cors import CORSMiddleware
 
 from app.core.config import get_settings
-from app.demo_topology import init_event_store, run_agent_to_tool, run_gateway_to_agent
+from app.demo_topology import (
+    honeypot,
+    init_event_store,
+    run_agent_to_tool,
+    run_gateway_to_agent,
+)
 from app.event_store import get_event_store
 from app.event_store import EventStore
 from app.experiments.runner import ExperimentRunner
@@ -19,6 +24,7 @@ from app.schemas import (
     ExperimentRun,
     ReplaySession,
     ReplayState,
+    ThreatIntelReport,
 )
 from app.benchmark.runner import BenchmarkRunner
 from app.llm.factory import get_llm_client
@@ -337,6 +343,20 @@ async def get_benchmark_report(report_id: str) -> dict | None:
     if report is None:
         return None
     return report.model_dump(mode="json")
+
+
+# ── Honeypot Intelligence ────────────────────────────────────
+
+@app.get("/api/honeypot/intel")
+async def get_honeypot_intel() -> dict:
+    report = honeypot.generate_intel_report()
+    return report.model_dump(mode="json")
+
+
+@app.post("/api/honeypot/intel/feed-vector")
+async def feed_honeypot_to_vector() -> dict:
+    count = honeypot.feed_to_vector_store()
+    return {"novel_payloads_fed": count, "session_id": honeypot._session_id}
 
 
 # ── WebSocket ────────────────────────────────────────────────
