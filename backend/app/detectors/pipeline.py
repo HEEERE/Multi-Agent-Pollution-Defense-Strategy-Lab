@@ -18,12 +18,14 @@ class DetectorPipeline:
         log_all: bool = True,
         min_severity_for_llm: EventSeverity = EventSeverity.WARNING,
         bus: MessageBus | None = None,
+        fusion_threshold: float = 0.82,
     ) -> None:
         self.detectors = detectors
         self.short_circuit = short_circuit
         self.log_all = log_all
         self.min_severity_for_llm = min_severity_for_llm
         self._bus = bus
+        self.fusion_threshold = fusion_threshold
 
     async def inspect(self, event: AgentEvent) -> AgentEvent | None:
         context = DetectionContext(event=event)
@@ -98,7 +100,51 @@ class DetectorPipeline:
                 "metadata": {**final_event.metadata, "detection_log": detection_log},
             })
 
+        # ── Bayesian Confidence Fusion ──────────────────────────
+        # If no single detector blocked, fuse L2+L3 confidences to catch
+        # compound threats that individually don't meet thresholds.
+        if not blocked and detection_log:
+            active_results = [
+                d for d in detection_log
+                if not d.get("skipped") and d.get("confidence", 0) > 0
+            ]
+            confidences = [d["confidence"] for d in active_results]
+            if len(confidences) >= 2:
+                fused = self._fuse_confidences(confidences)
+                if fused >= self.fusion_threshold:
+                    final_event = final_event.model_copy(update={
+                        "status": EventStatus.QUARANTINED,
+                        "action_taken": ActionTaken.ALERT,
+                        "severity": EventSeverity.WARNING,
+                        "monitor_level": MonitorLevel.FEATURE,
+                        "metadata": {
+                            **final_event.metadata,
+                            "detection": {
+                                "detector_id": "bayesian_fusion",
+                                "level": MonitorLevel.FEATURE.value,
+                                "confidence": round(fused, 4),
+                                "reason": f"Fused confidence {fused:.3f} ≥ {self.fusion_threshold} from {len(confidences)} detectors",
+                            },
+                            "fusion": {
+                                "individual_confidences": confidences,
+                                "fused_confidence": round(fused, 4),
+                                "threshold": self.fusion_threshold,
+                            },
+                            "detection_log": detection_log,
+                        },
+                    })
+                    await self._emit_intervention(final_event,
+                        f"Bayesian fusion alert: compound confidence {fused:.3f}")
+
         return final_event
+
+    @staticmethod
+    def _fuse_confidences(confidences: list[float]) -> float:
+        """Bayesian fusion: P(threat | all detectors) = 1 - ∏(1 - P_i)."""
+        combined = 1.0
+        for c in confidences:
+            combined *= (1.0 - max(0.0, min(c, 0.99)))
+        return round(1.0 - combined, 4)
 
     async def _emit_intervention(self, event: AgentEvent, reason: str) -> None:
         if self._bus is None:

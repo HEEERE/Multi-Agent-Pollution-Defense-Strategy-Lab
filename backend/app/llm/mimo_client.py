@@ -13,7 +13,7 @@ class MiMoClient:
         self.settings = settings
         self._endpoint = f"{str(settings.mimo_base_url).rstrip('/')}/chat/completions"
 
-    async def chat(self, messages: list[ChatMessage]) -> LLMResponse:
+    async def chat(self, messages: list[ChatMessage], temperature: float | None = None) -> LLMResponse:
         if not self.settings.llm_ready:
             return self._disabled_response(messages)
 
@@ -21,7 +21,7 @@ class MiMoClient:
         payload = {
             "model": self.settings.mimo_model,
             "messages": [message.__dict__ for message in messages],
-            "temperature": self.settings.llm_temperature,
+            "temperature": temperature if temperature is not None else self.settings.llm_temperature,
             "max_tokens": self.settings.llm_max_tokens,
         }
         headers = {

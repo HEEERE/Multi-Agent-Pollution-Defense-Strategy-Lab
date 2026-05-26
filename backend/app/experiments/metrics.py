@@ -1,3 +1,12 @@
+""""Experiment metrics computation with statistical significance.
+
+MetricsComputer — single-run metrics from raw events.
+AggregateMetrics — multi-run bootstrap confidence intervals and A/B comparison.
+"""
+
+import random
+from statistics import mean, stdev
+
 from app.schemas import (
     ActionTaken,
     AgentEvent,
@@ -112,3 +121,89 @@ class MetricsComputer:
                     break
             max_depth = max(max_depth, depth)
         return max_depth
+
+
+class AggregateMetrics:
+    """Multi-run statistical analysis with bootstrap confidence intervals.
+
+    Takes multiple ExperimentMetrics objects from repeated runs of the same
+    experiment configuration and computes means, standard deviations, and
+    95% confidence intervals via bootstrap resampling.
+    """
+
+    N_BOOTSTRAP = 2000
+
+    def __init__(self, metrics_list: list[dict]) -> None:
+        self.metrics_list = metrics_list
+        self._field_names = [
+            "propagation_depth", "time_to_detection_ms", "false_positive_rate",
+            "intervention_effectiveness", "detection_latency_ms",
+            "contamination_spread_rate", "total_events", "threats_detected",
+            "threats_blocked", "cascade_depth",
+        ]
+
+    def compute(self) -> dict:
+        """Return aggregated stats with CIs for each metric field."""
+        result: dict = {
+            "n_runs": len(self.metrics_list),
+            "fields": {},
+        }
+
+        for field in self._field_names:
+            values = [m.get(field, 0.0) for m in self.metrics_list if field in m]
+            if len(values) < 2:
+                result["fields"][field] = {
+                    "mean": values[0] if values else 0,
+                    "std": 0,
+                    "ci_95_lower": values[0] if values else 0,
+                    "ci_95_upper": values[0] if values else 0,
+                    "n": len(values),
+                }
+                continue
+
+            mu = mean(values)
+            sd = stdev(values) if len(values) >= 2 else 0.0
+            ci_low, ci_high = self._bootstrap_ci(values)
+
+            result["fields"][field] = {
+                "mean": round(mu, 4),
+                "std": round(sd, 4),
+                "ci_95_lower": round(ci_low, 4),
+                "ci_95_upper": round(ci_high, 4),
+                "n": len(values),
+            }
+
+        return result
+
+    def _bootstrap_ci(self, values: list[float]) -> tuple[float, float]:
+        """Percentile bootstrap 95% CI."""
+        n = len(values)
+        means: list[float] = []
+        for _ in range(self.N_BOOTSTRAP):
+            sample = [random.choice(values) for _ in range(n)]
+            means.append(mean(sample))
+        means.sort()
+        lo_idx = int(self.N_BOOTSTRAP * 0.025)
+        hi_idx = int(self.N_BOOTSTRAP * 0.975)
+        return means[lo_idx], means[hi_idx]
+
+    @staticmethod
+    def compare(baseline: dict, treatment: dict) -> dict:
+        """Compute p-value and effect size between two metric sets."""
+        comparisons: dict = {}
+        fields = set(baseline.get("fields", {}).keys()) & set(treatment.get("fields", {}).keys())
+        for field in fields:
+            b = baseline["fields"][field]
+            t = treatment["fields"][field]
+            diff = t["mean"] - b["mean"]
+            pooled_sd = ((b["std"] ** 2 + t["std"] ** 2) / 2) ** 0.5 if (b["std"] + t["std"]) > 0 else 0.001
+            cohens_d = diff / pooled_sd if pooled_sd else 0.0
+            overlaps = (t["ci_95_lower"] <= b["ci_95_upper"]) and (b["ci_95_lower"] <= t["ci_95_upper"])
+            comparisons[field] = {
+                "baseline_mean": b["mean"],
+                "treatment_mean": t["mean"],
+                "delta": round(diff, 4),
+                "cohens_d": round(cohens_d, 3),
+                "significant": not overlaps,
+            }
+        return comparisons

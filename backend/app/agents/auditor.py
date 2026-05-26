@@ -1,12 +1,14 @@
 """Auditor Agent — cross-validates every agent action on the bus.
 
-This agent subscribes to ALL events (via subscribe_all) and independently
-reasons about whether any COMMUNICATION or TOOL_CALL event represents a
-threat. It uses a two-tier response:
-
-1. First suspicion → CHALLENGE (asks source agent to self-correct)
-2. Repeat / confirmed threat → INTERVENTION with BLOCK (force stop)
+Accumulating reputation system:
+- Each agent has a floating-point reputation score (0.0–1.0, initial 1.0)
+- THREAT_DETECTED → reputation drops proportional to confidence
+- SAFE events → reputation slowly recovers (+0.02/event, max 1.0)
+- Reputation below 0.3 → skip CHALLENGE, go straight to BLOCK
+- No events from agent for >60s → time-based reputation recovery
 """
+
+from time import time
 
 from app.agents.base import BaseAgent
 from app.llm.base import ChatMessage
@@ -32,6 +34,12 @@ AUDITOR_SYSTEM_PROMPT = (
     "followed by a one-sentence reason."
 )
 
+REPUTATION_INITIAL = 1.0
+REPUTATION_RECOVERY_RATE = 0.02
+REPUTATION_BLOCK_THRESHOLD = 0.30
+REPUTATION_DECAY_INTERVAL = 60.0
+REPUTATION_DECAY_RATE = 0.05
+
 
 class AuditorAgent(BaseAgent):
     def __init__(
@@ -43,96 +51,139 @@ class AuditorAgent(BaseAgent):
     ) -> None:
         super().__init__(node_id, bus, llm_client)
         self.protected_nodes = protected_nodes or []
-        self._challenge_history: dict[str, int] = {}
+
+        # Reputation system
+        self._reputation: dict[str, float] = {}
+        self._last_event_time: dict[str, float] = {}
         self._blocked_sources: set[str] = set()
 
-        # Override the default system prompt with auditor-specific one
         self._conversation_history = [
             ChatMessage(role="system", content=AUDITOR_SYSTEM_PROMPT)
         ]
 
-        # Critical: listen to ALL events, not just events targeted at self
         self.bus.subscribe_all(self.audit_event)
 
+    def get_reputation(self, node_id: str) -> float:
+        """Return current reputation score for a given agent."""
+        self._apply_time_decay(node_id)
+        return self._reputation.get(node_id, REPUTATION_INITIAL)
+
+    def get_all_reputations(self) -> dict[str, float]:
+        """Return reputation scores for all tracked agents."""
+        for nid in list(self._last_event_time.keys()):
+            self._apply_time_decay(nid)
+        return {
+            nid: self._reputation.get(nid, REPUTATION_INITIAL)
+            for nid in self._last_event_time
+        }
+
+    def _apply_time_decay(self, node_id: str) -> None:
+        """Recover reputation if enough time has passed without incidents."""
+        if node_id not in self._last_event_time:
+            return
+        elapsed = time() - self._last_event_time[node_id]
+        if elapsed > REPUTATION_DECAY_INTERVAL:
+            current = self._reputation.get(node_id, REPUTATION_INITIAL)
+            periods = int(elapsed / REPUTATION_DECAY_INTERVAL)
+            recovery = min(REPUTATION_DECAY_RATE * periods, 0.15)
+            self._reputation[node_id] = min(REPUTATION_INITIAL, current + recovery)
+            self._last_event_time[node_id] = time()
+
+    def _reduce_reputation(self, node_id: str, confidence: float) -> float:
+        """Reduce an agent's reputation and return the new value."""
+        current = self._reputation.get(node_id, REPUTATION_INITIAL)
+        penalty = 0.15 + confidence * 0.25  # 0.15–0.40 range
+        new_rep = max(0.0, current - penalty)
+        self._reputation[node_id] = new_rep
+        self._last_event_time[node_id] = time()
+        return new_rep
+
+    def _recover_reputation(self, node_id: str) -> float:
+        """Recover reputation slightly on a safe event."""
+        current = self._reputation.get(node_id, REPUTATION_INITIAL)
+        new_rep = min(REPUTATION_INITIAL, current + REPUTATION_RECOVERY_RATE)
+        self._reputation[node_id] = new_rep
+        self._last_event_time[node_id] = time()
+        return new_rep
+
     async def audit_event(self, event: AgentEvent) -> None:
-        # Don't audit own events
         if event.source_node == self.node_id:
             return
 
-        # Only audit communications and tool calls
         if event.event_type not in {EventType.COMMUNICATION, EventType.TOOL_CALL}:
             return
 
-        # Skip already-blocked events
         if event.action_taken == ActionTaken.BLOCK:
             return
 
-        # Optional: only audit protected nodes if list is specified
         if self.protected_nodes and event.source_node not in self.protected_nodes:
             return
 
-        # Don't re-audit sources that were already blocked
         if event.source_node in self._blocked_sources:
             return
+
+        # Apply time-based decay before checking reputation
+        self._apply_time_decay(event.source_node)
 
         verdict = await self._cross_validate(event)
 
         if verdict == "SAFE":
-            # Clear challenge history for this source on safe events
-            self._challenge_history.pop(event.source_node, None)
+            self._recover_reputation(event.source_node)
             return
 
         if verdict == "NEEDS_CLARIFICATION":
-            await self._challenge(event, "Requesting clarification on this action")
+            rep = self._reputation.get(event.source_node, REPUTATION_INITIAL)
+            if rep < REPUTATION_BLOCK_THRESHOLD:
+                await self._block(event,
+                    f"Reputation too low ({rep:.2f}) for dialogue — action blocked.")
+            else:
+                await self._challenge(event,
+                    "Auditor requests clarification on this action.")
             return
 
         if verdict == "THREAT_DETECTED":
-            challenge_key = f"{event.source_node}:{event.event_type.value}"
-            prior_challenges = self._challenge_history.get(challenge_key, 0)
-
-            if prior_challenges == 0:
-                # First detection: issue CHALLENGE for self-correction
-                self._challenge_history[challenge_key] = 1
-                await self._challenge(
-                    event,
-                    f"Auditor detected potential threat. "
-                    f"Explain your reasoning for this action or self-correct.",
-                )
+            rep = self._reduce_reputation(event.source_node, 0.7)
+            if rep < REPUTATION_BLOCK_THRESHOLD:
+                await self._block(event,
+                    f"Threat detected. Reputation critically low ({rep:.2f}). Action blocked.")
             else:
-                # Repeated threat: escalate to BLOCK
-                await self._block(event, f"Repeated threat after challenge. Action blocked.")
+                await self._challenge(event,
+                    f"Auditor detected threat (rep now {rep:.2f}). "
+                    f"Explain or self-correct.")
 
     async def handle_event(self, event: AgentEvent) -> None:
-        """Override: handle CHALLENGE responses from challenged agents."""
         if event.event_type == EventType.CHALLENGE:
             if event.source_node == self.node_id:
-                return  # Don't process own challenges
+                return
 
-            # A challenged agent is responding to our challenge
-            # Re-evaluate their response
-            challenge_key = f"{event.source_node}:communication"
-            self._challenge_history.pop(challenge_key, None)
+            self._apply_time_decay(event.source_node)
 
-            # If the response contains admission or self-correction, let it pass
             response_lower = event.payload_snippet.lower()
             if any(word in response_lower for word in
                    ["you are right", "you're right", "被误导", "misled", "自省",
                     "correction", "放弃", "withdraw", "retract", "acknowledge"]):
-                # Agent self-corrected — clear their block status
                 self._blocked_sources.discard(event.source_node)
+                self._recover_reputation(event.source_node)
+                self._recover_reputation(event.source_node)
                 return
 
-            # Agent is defending: re-audit
+            rep = self._reputation.get(event.source_node, REPUTATION_INITIAL)
+            if rep < REPUTATION_BLOCK_THRESHOLD:
+                await self._block(event, f"Reputation exhausted ({rep:.2f}). Agent blocked.")
+                return
+
             verdict = await self._cross_validate(event)
             if verdict == "THREAT_DETECTED":
-                await self._block(event, "Defense rejected. Threat confirmed.")
+                new_rep = self._reduce_reputation(event.source_node, 0.8)
+                await self._block(event,
+                    f"Defense rejected. Reputation {new_rep:.2f}. Threat confirmed.")
+            else:
+                self._recover_reputation(event.source_node)
             return
 
-        # Default: pass through to base handler for INTERVENTION events
         await super().handle_event(event)
 
     async def _cross_validate(self, event: AgentEvent) -> str:
-        """Use independent LLM context to judge whether an action is a threat."""
         if self.llm_client is None:
             return "SAFE"
 
@@ -158,7 +209,6 @@ class AuditorAgent(BaseAgent):
             return "SAFE"
 
     async def _challenge(self, event: AgentEvent, reason: str) -> None:
-        """Issue a CHALLENGE event asking the source agent to self-correct."""
         await self.bus.publish(
             AgentEvent(
                 event_type=EventType.CHALLENGE,
@@ -173,12 +223,12 @@ class AuditorAgent(BaseAgent):
                     "triggered_by": event.event_id,
                     "original_event_type": event.event_type.value,
                     "original_target": event.target_node,
+                    "reputation": self._reputation.get(event.source_node, 0),
                 },
             )
         )
 
     async def _block(self, event: AgentEvent, reason: str) -> None:
-        """Emit an INTERVENTION that forcefully blocks the source agent."""
         self._blocked_sources.add(event.source_node)
         await self.bus.emit(
             AgentEvent(
@@ -193,6 +243,7 @@ class AuditorAgent(BaseAgent):
                 metadata={
                     "triggered_by": event.event_id,
                     "blocked_action": event.event_type.value,
+                    "reputation": self._reputation.get(event.source_node, 0),
                 },
             )
         )
