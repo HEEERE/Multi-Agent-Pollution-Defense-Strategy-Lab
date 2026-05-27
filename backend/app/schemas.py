@@ -79,6 +79,15 @@ class AgentEvent(BaseModel):
     severity: EventSeverity = EventSeverity.INFO
     monitor_level: MonitorLevel = MonitorLevel.NONE
     metadata: dict[str, Any] = Field(default_factory=dict)
+    # ── v2 fields (additive, backward-compatible) ──
+    event_category: str | None = None
+    risk_tags: list[str] = Field(default_factory=list)
+    trust_level: str = "unknown"  # trusted | untrusted | unknown
+    contamination_score: float = 0.0
+    policy_decision: str | None = None
+    policy_id: str | None = None
+    edge_kind: str | None = None
+    artifact_refs: list[str] = Field(default_factory=list)
 
 
 # ── Topology & injection configs ─────────────────────────────

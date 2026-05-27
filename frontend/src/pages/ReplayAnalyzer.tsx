@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useState } from "react";
 import { api } from "../api";
 import { useT } from "../i18n/context";
-import type { AgentEvent, ReplaySession, TraceSummary } from "../types";
+import type { AgentEvent, ContaminationMetrics, ReplaySession, TraceSummary } from "../types";
 
 export function ReplayAnalyzer() {
   const { t } = useT();
@@ -11,6 +11,7 @@ export function ReplayAnalyzer() {
   const [events, setEvents] = useState<AgentEvent[]>([]);
   const [currentEvent, setCurrentEvent] = useState<AgentEvent | null>(null);
   const [speed, setSpeed] = useState(1);
+  const [contamination, setContamination] = useState<ContaminationMetrics | null>(null);
 
   const loadTraces = useCallback(async () => {
     try {
@@ -23,11 +24,14 @@ export function ReplayAnalyzer() {
 
   const startReplay = useCallback(async (traceId: string) => {
     setSelectedTraceId(traceId);
+    setContamination(null);
     try {
       const result = await api.startReplay(traceId);
       setSession({ ...result, trace_id: traceId, speed_multiplier: 1, current_index: 0 } as unknown as ReplaySession);
       const allEvents = await api.getTrace(traceId);
       setEvents(allEvents);
+      const cMetrics = await api.getContaminationMetrics(traceId);
+      setContamination(cMetrics);
     } catch { /* ignore */ }
   }, []);
 
@@ -124,6 +128,56 @@ export function ReplayAnalyzer() {
               </span>
             </div>
 
+            {/* Contamination Summary */}
+            {contamination && (
+              <div className="border-b border-slate-200 bg-white px-6 py-3">
+                <h3 className="mb-2 text-xs font-semibold uppercase tracking-wide text-slate-500">
+                  Contamination Summary
+                </h3>
+                <div className="grid grid-cols-4 gap-3 text-xs">
+                  <div className="rounded border border-slate-200 bg-slate-50 p-2">
+                    <div className="text-slate-500">Propagation Depth</div>
+                    <div className="text-lg font-bold text-slate-900">{contamination.propagation_depth}</div>
+                  </div>
+                  <div className="rounded border border-slate-200 bg-slate-50 p-2">
+                    <div className="text-slate-500">Blast Radius</div>
+                    <div className="text-lg font-bold text-slate-900">{contamination.blast_radius}</div>
+                  </div>
+                  <div className="rounded border border-slate-200 bg-slate-50 p-2">
+                    <div className="text-slate-500">Max Score</div>
+                    <div className={`text-lg font-bold ${contamination.max_contamination_score > 0.5 ? "text-rose-600" : "text-slate-900"}`}>
+                      {contamination.max_contamination_score.toFixed(2)}
+                    </div>
+                  </div>
+                  <div className="rounded border border-slate-200 bg-slate-50 p-2">
+                    <div className="text-slate-500">Time to Detection</div>
+                    <div className="text-lg font-bold text-slate-900">
+                      {contamination.time_to_detection_ms != null ? `${contamination.time_to_detection_ms.toFixed(0)}ms` : "N/A"}
+                    </div>
+                  </div>
+                  <div className="rounded border border-slate-200 bg-slate-50 p-2">
+                    <div className="text-slate-500">Recovery</div>
+                    <div className={`text-lg font-bold ${contamination.recovery_success ? "text-emerald-600" : "text-rose-600"}`}>
+                      {contamination.recovery_success ? "Yes" : "No"}
+                    </div>
+                  </div>
+                  <div className="rounded border border-slate-200 bg-slate-50 p-2">
+                    <div className="text-slate-500">Persistence</div>
+                    <div className={`text-lg font-bold ${contamination.contamination_persistence > 0.3 ? "text-amber-600" : "text-slate-900"}`}>
+                      {(contamination.contamination_persistence * 100).toFixed(0)}%
+                    </div>
+                  </div>
+                  <div className="rounded border border-slate-200 bg-slate-50 p-2">
+                    <div className="text-slate-500">Contaminated Nodes</div>
+                    <div className="text-xs font-medium text-slate-700 truncate" title={contamination.contaminated_nodes.join(", ")}>
+                      {contamination.contaminated_nodes.length > 0 ? contamination.contaminated_nodes.join(", ") : "None"}
+                    </div>
+                  </div>
+                </div>
+              </div>
+            )}
+
+            {/* Event timeline */}
             <div className="min-h-0 flex-1 overflow-y-auto p-4">
               <div className="space-y-1">
                 {events.map((evt, i) => (
