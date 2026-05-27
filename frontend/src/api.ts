@@ -48,4 +48,12 @@ export const api = {
   seekReplay: (sid: string, pos: number) => request<Record<string, unknown>>(`/api/replay/${sid}/seek?position=${pos}`, { method: "POST" }),
   speedReplay: (sid: string, mult: number) => request<Record<string, unknown>>(`/api/replay/${sid}/speed?multiplier=${mult}`, { method: "POST" }),
   getReplayState: (sid: string) => request<Record<string, unknown>>(`/api/replay/${sid}/state`),
+
+  // TraceGraph & Contamination (v2)
+  getTraceGraph: (traceId: string) => request<import("./types").TraceGraph>(`/api/traces/${traceId}/graph`),
+  getContaminationMetrics: (traceId: string) => request<import("./types").ContaminationMetrics>(`/api/traces/${traceId}/contamination`),
+
+  // Policies (v2)
+  getPolicies: () => request<import("./types").PolicyRule[]>("/api/policies"),
+  evaluatePolicy: (event: import("./types").AgentEvent) => request<import("./types").PolicyDecision>("/api/policies/evaluate", { method: "POST", body: JSON.stringify(event) }),
 };
