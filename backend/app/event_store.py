@@ -52,6 +52,36 @@ INDEXES = [
 ]
 
 
+MIGRATION_COLUMNS: list[tuple[str, str]] = [
+    ("event_category", "event_category TEXT"),
+    ("risk_tags", "risk_tags TEXT NOT NULL DEFAULT '[]'"),
+    ("trust_level", "trust_level TEXT NOT NULL DEFAULT 'unknown'"),
+    ("contamination_score", "contamination_score REAL NOT NULL DEFAULT 0.0"),
+    ("policy_decision", "policy_decision TEXT"),
+    ("policy_id", "policy_id TEXT"),
+    ("edge_kind", "edge_kind TEXT"),
+    ("artifact_refs", "artifact_refs TEXT NOT NULL DEFAULT '[]'"),
+]
+
+
+async def _ensure_column(conn: aiosqlite.Connection, table: str, column: str, ddl: str) -> None:
+    cursor = await conn.execute(f"PRAGMA table_info({table})")
+    rows = await cursor.fetchall()
+    columns = {row["name"] for row in rows}
+    if column not in columns:
+        await conn.execute(f"ALTER TABLE {table} ADD COLUMN {ddl}")
+
+
+def _parse_json_list(raw: str | None) -> list:
+    if not raw:
+        return []
+    try:
+        val = json.loads(raw)
+        return val if isinstance(val, list) else []
+    except (json.JSONDecodeError, TypeError):
+        return []
+
+
 def _event_to_row(event: AgentEvent) -> dict:
     return {
         "event_id": event.event_id,
@@ -67,6 +97,14 @@ def _event_to_row(event: AgentEvent) -> dict:
         "severity": event.severity.value,
         "monitor_level": event.monitor_level.value,
         "metadata": json.dumps(event.metadata, ensure_ascii=False),
+        "event_category": event.event_category,
+        "risk_tags": json.dumps(event.risk_tags, ensure_ascii=False),
+        "trust_level": event.trust_level,
+        "contamination_score": event.contamination_score,
+        "policy_decision": event.policy_decision,
+        "policy_id": event.policy_id,
+        "edge_kind": event.edge_kind,
+        "artifact_refs": json.dumps(event.artifact_refs, ensure_ascii=False),
     }
 
 
@@ -85,6 +123,14 @@ def _row_to_event(row: aiosqlite.Row) -> AgentEvent:
         severity=row["severity"],
         monitor_level=row["monitor_level"],
         metadata=json.loads(row["metadata"]) if row["metadata"] else {},
+        event_category=row["event_category"] if "event_category" in row.keys() else None,
+        risk_tags=_parse_json_list(row["risk_tags"]) if "risk_tags" in row.keys() else [],
+        trust_level=row["trust_level"] if "trust_level" in row.keys() else "unknown",
+        contamination_score=row["contamination_score"] if "contamination_score" in row.keys() else 0.0,
+        policy_decision=row["policy_decision"] if "policy_decision" in row.keys() else None,
+        policy_id=row["policy_id"] if "policy_id" in row.keys() else None,
+        edge_kind=row["edge_kind"] if "edge_kind" in row.keys() else None,
+        artifact_refs=_parse_json_list(row["artifact_refs"]) if "artifact_refs" in row.keys() else [],
     )
 
 
@@ -102,6 +148,8 @@ class EventStore:
             await self._conn.execute("PRAGMA foreign_keys=ON;")
             await self._conn.execute(CREATE_EVENTS_TABLE)
             await self._conn.execute(CREATE_EXPERIMENTS_TABLE)
+            for col_name, col_ddl in MIGRATION_COLUMNS:
+                await _ensure_column(self._conn, "events", col_name, col_ddl)
             for idx in INDEXES:
                 await self._conn.execute(idx)
             await self._conn.commit()

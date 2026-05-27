@@ -154,6 +154,16 @@ Set `LLM_ENABLED=false` in `backend/.env` — no API key required. All detectors
 - **Visual Console** — ReactFlow topology with real-time infection ripple, edge contamination pulse, quarantine animation
 - **Monitor Status Panel** — Real-time per-level interception counts and detection reasons
 - **6 Built-in Playbooks** — From explicit jailbreak to covert RAG poisoning and cognitive deception
+- **Policy Engine** — Rule-based action decisions (allow/alert/quarantine/isolate/block) with detector override protection
+- **Contamination Analysis** — Propagation depth, blast radius, time-to-detection, recovery success, persistence metrics
+
+## TraceGraph & Contamination Analysis
+
+The platform reconstructs event streams into TraceGraph objects and computes contamination propagation metrics such as propagation depth, blast radius, time-to-detection, recovery success, and contamination persistence. See [docs/trace-graph.md](docs/trace-graph.md) for details.
+
+## Policy Engine
+
+A rule-based policy engine sits between detection and action, evaluating events against configurable policies to determine response actions. See [docs/policy-engine.md](docs/policy-engine.md) for details.
 
 ## API Endpoints
 
@@ -162,7 +172,11 @@ Set `LLM_ENABLED=false` in `backend/.env` — no API key required. All detectors
 | GET | `/api/events` | Query events by trace, severity, status |
 | GET | `/api/traces` | List all trace summaries |
 | GET | `/api/traces/{id}` | Full trace replay |
+| GET | `/api/traces/{id}/graph` | Get TraceGraph for a trace |
+| GET | `/api/traces/{id}/contamination` | Get contamination metrics for a trace |
 | DELETE | `/api/traces/{id}` | Delete a trace |
+| GET | `/api/policies` | List active policies |
+| POST | `/api/policies/evaluate` | Evaluate a policy against an event |
 | GET | `/api/playbooks` | List playbook scenarios |
 | POST | `/api/playbooks/{id}/run` | Run a playbook (streams via WebSocket) |
 | POST | `/api/experiments` | Create and run an experiment |

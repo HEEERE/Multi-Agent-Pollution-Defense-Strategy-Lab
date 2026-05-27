@@ -9,6 +9,7 @@ export const statusPalette: Record<EventStatus, { node: string; edge: string; te
   honeypotted:{ node: "#8b5cf6", edge: "#a78bfa", text: "Honeypotted" },
   infected:   { node: "#dc2626", edge: "#ef4444", text: "Infected" },
   quarantined:{ node: "#6b7280", edge: "#9ca3af", text: "Quarantined" },
+  isolated:   { node: "#7c3aed", edge: "#8b5cf6", text: "Isolated" },
   recovered:  { node: "#0891b2", edge: "#06b6d4", text: "Recovered" },
 };
 

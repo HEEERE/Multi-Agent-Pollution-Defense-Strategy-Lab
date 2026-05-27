@@ -30,6 +30,10 @@ from app.benchmark.runner import BenchmarkRunner
 from app.llm.factory import get_llm_client
 from app.schemas import BenchmarkReport
 from app.websocket_manager import websocket_manager
+from app.trace_graph.builder import TraceGraphBuilder
+from app.trace_graph.analyzer import ContaminationAnalyzer
+from app.policy.engine import PolicyEngine
+from app.policy.default_policies import DEFAULT_POLICIES
 
 _benchmark_reports: dict[str, BenchmarkReport] = {}
 
@@ -160,6 +164,43 @@ async def delete_trace(trace_id: str) -> dict:
     store = await get_event_store()
     count = await store.delete_trace(trace_id)
     return {"deleted": count, "trace_id": trace_id}
+
+
+# ── TraceGraph & Contamination ────────────────────────────────
+
+
+@app.get("/api/traces/{trace_id}/graph")
+async def get_trace_graph(trace_id: str) -> dict:
+    store = await get_event_store()
+    events = await store.get_events_by_trace(trace_id)
+    builder = TraceGraphBuilder()
+    graph = builder.build(events)
+    return graph.model_dump(mode="json")
+
+
+@app.get("/api/traces/{trace_id}/contamination")
+async def get_trace_contamination(trace_id: str) -> dict:
+    store = await get_event_store()
+    events = await store.get_events_by_trace(trace_id)
+    builder = TraceGraphBuilder()
+    graph = builder.build(events)
+    analyzer = ContaminationAnalyzer()
+    metrics = analyzer.analyze(graph, events)
+    return metrics.to_dict()
+
+
+# ── Policy endpoints ──────────────────────────────────────────
+
+@app.get("/api/policies")
+async def get_policies() -> list[dict]:
+    return DEFAULT_POLICIES
+
+
+@app.post("/api/policies/evaluate")
+async def evaluate_policy(event: AgentEvent) -> dict:
+    engine = PolicyEngine()
+    decision = engine.evaluate(event)
+    return decision.model_dump(mode="json")
 
 
 # ── Demo task endpoints ──────────────────────────────────────

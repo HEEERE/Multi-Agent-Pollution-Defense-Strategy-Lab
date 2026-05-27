@@ -1,7 +1,7 @@
 // ── Event types ──────────────────────────────────────────────
 
 export type EventType = "input" | "communication" | "tool_call" | "intervention" | "challenge";
-export type EventStatus = "safe" | "exposed" | "challenged" | "honeypotted" | "infected" | "quarantined" | "recovered";
+export type EventStatus = "safe" | "exposed" | "challenged" | "honeypotted" | "infected" | "quarantined" | "isolated" | "recovered";
 export type EventSeverity = "info" | "warning" | "critical";
 export type MonitorLevel = 0 | 1 | 2 | 3;
 export type ActionTaken = "none" | "alert" | "block" | "quarantine" | "isolate" | "decoy";
@@ -30,6 +30,9 @@ export interface NodeData extends Record<string, unknown> {
   role: string;
   status: EventStatus;
   subtitle: string;
+  contamination_score?: number;
+  trust_level?: string;
+  risk_tags?: string[];
 }
 
 export interface PlaybookSummary {
@@ -159,4 +162,70 @@ export interface ReplaySession {
   total_events: number;
   speed_multiplier: number;
   current_timestamp: number | null;
+}
+
+// ── TraceGraph & Contamination (v2) ───────────────────────────
+
+export interface TraceGraphNode {
+  node_id: string;
+  node_type: string;
+  label: string;
+  contamination_score: number;
+  trust_level: string;
+  metadata: Record<string, unknown>;
+}
+
+export interface TraceGraphEdge {
+  edge_id: string;
+  trace_id: string;
+  source: string;
+  target: string;
+  event_id: string;
+  edge_kind: string;
+  timestamp: number;
+  risk_tags: string[];
+  contamination_delta: number;
+  metadata: Record<string, unknown>;
+}
+
+export interface TraceGraph {
+  trace_id: string;
+  nodes: TraceGraphNode[];
+  edges: TraceGraphEdge[];
+  metrics: Record<string, unknown>;
+}
+
+export interface ContaminationMetrics {
+  trace_id: string;
+  propagation_depth: number;
+  blast_radius: number;
+  contaminated_nodes: string[];
+  first_contaminated_event_id?: string | null;
+  first_detection_event_id?: string | null;
+  time_to_detection_ms?: number | null;
+  recovery_success: boolean;
+  max_contamination_score: number;
+  contamination_persistence: number;
+}
+
+// ── Policy (v2) ───────────────────────────────────────────────
+
+export interface PolicyRule {
+  policy_id: string;
+  name: string;
+  description: string;
+  enabled: boolean;
+  priority: number;
+  condition: Record<string, unknown>;
+  action: string;
+  severity: string;
+  reason: string;
+}
+
+export interface PolicyDecision {
+  policy_id: string | null;
+  action: string;
+  severity: string;
+  reason: string;
+  matched: boolean;
 }

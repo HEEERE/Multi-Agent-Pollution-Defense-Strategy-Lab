@@ -32,6 +32,29 @@ export function NodeDetailPanel() {
           <X size={16} />
         </button>
       </div>
+
+      {/* Node metadata (v2) */}
+      <div className="border-b border-slate-100 px-4 py-2">
+        <div className="grid grid-cols-2 gap-2 text-xs">
+          <div>
+            <span className="text-slate-400">Trust:</span>{" "}
+            <span className="font-medium text-slate-700">{node.data.trust_level ?? "unknown"}</span>
+          </div>
+          <div>
+            <span className="text-slate-400">Contamination:</span>{" "}
+            <span className={`font-medium ${(node.data.contamination_score ?? 0) > 0.5 ? "text-rose-600" : "text-slate-700"}`}>
+              {((node.data.contamination_score ?? 0) * 100).toFixed(0)}%
+            </span>
+          </div>
+          {node.data.risk_tags && (node.data.risk_tags as string[]).length > 0 && (
+            <div className="col-span-2">
+              <span className="text-slate-400">Risk Tags:</span>{" "}
+              <span className="font-medium text-amber-700">{(node.data.risk_tags as string[]).join(", ")}</span>
+            </div>
+          )}
+        </div>
+      </div>
+
       <div className="max-h-[380px] space-y-1 overflow-y-auto p-3">
         <div className="mb-2 flex items-center gap-3 text-xs">
           <span className="font-medium text-slate-600">Event history ({nodeEvents.length})</span>

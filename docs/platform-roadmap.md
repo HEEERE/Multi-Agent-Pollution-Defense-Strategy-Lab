@@ -41,6 +41,19 @@ LLM_ENABLED=true
 
 When `LLM_ENABLED=false`, the platform returns deterministic disabled-provider responses so demos and tests still run without network access.
 
+## Completed milestones
+
+### v0.3.0 — Agentic AI Runtime Security Upgrade
+- **TraceGraph** reconstruction from event streams with node/edge models
+- **Contamination Analyzer** with propagation depth, blast radius, time-to-detection, recovery success, persistence
+- **Policy Engine** with rule-based action decisions (3 default policies, detector override protection)
+- **Event Schema v2** with 8 new fields (event_category, risk_tags, trust_level, contamination_score, policy_decision, policy_id, edge_kind, artifact_refs)
+- **Idempotent SQLite Migration** using PRAGMA table_info for backward-compatible schema evolution
+- **Benchmark v2** corpus with 7 categories (19 samples) and v2 metrics model
+- **Frontend Contamination UI** with summary panel, node badges, and enhanced detail panel
+- **API**: `/api/traces/{id}/graph`, `/api/traces/{id}/contamination`, `/api/policies`, `/api/policies/evaluate`
+- Documentation: `docs/trace-graph.md`, `docs/policy-engine.md`
+
 ## Next recommended milestone
 
-Upgrade `AgentEvent` into a research-grade trace schema and add an event store. This will make every visualization reproducible and measurable.
+Add `memory/` and `rag/` guard modules to enforce security semantics at the memory and retrieval layers.
