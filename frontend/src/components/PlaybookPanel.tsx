@@ -1,5 +1,5 @@
 import { Play, RotateCcw } from "lucide-react";
-
+import { useT } from "../i18n/context";
 import type { PlaybookSummary } from "../types";
 
 interface PlaybookPanelProps {
@@ -10,17 +10,18 @@ interface PlaybookPanelProps {
 }
 
 export function PlaybookPanel({ playbooks, activeId, onRun, onReset }: PlaybookPanelProps) {
+  const { t } = useT();
   return (
     <div className="absolute left-5 top-5 z-10 w-[330px] rounded-lg border border-slate-200 bg-white p-3 shadow-signal">
       <div className="mb-3 flex items-center justify-between">
         <div>
-          <div className="text-sm font-semibold text-slate-950">Playbooks</div>
-          <div className="text-xs text-slate-500">Trigger animation scenarios</div>
+          <div className="text-sm font-semibold text-slate-950">{t("playbook.title")}</div>
+          <div className="text-xs text-slate-500">{t("playbook.subtitle")}</div>
         </div>
         <button
           className="inline-flex h-8 w-8 items-center justify-center rounded border border-slate-200 text-slate-600 hover:bg-slate-100"
           onClick={onReset}
-          title="Reset topology"
+          title={t("playbook.reset")}
           type="button"
         >
           <RotateCcw size={15} />

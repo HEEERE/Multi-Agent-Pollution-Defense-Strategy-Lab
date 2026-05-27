@@ -1,8 +1,10 @@
 import { useCallback, useEffect, useState } from "react";
 import { api } from "../api";
-import type { AgentEvent, ExperimentRun, TraceSummary } from "../types";
+import { useT } from "../i18n/context";
+import type { AgentEvent, ExperimentRun } from "../types";
 
 export function ExperimentStudio() {
+  const { t } = useT();
   const [experiments, setExperiments] = useState<ExperimentRun[]>([]);
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [trace, setTrace] = useState<AgentEvent[]>([]);
@@ -22,11 +24,11 @@ export function ExperimentStudio() {
     setSelectedId(id);
     setLoading(true);
     try {
-      const [t, m] = await Promise.all([
+      const [tr, m] = await Promise.all([
         api.getExperimentTrace(id),
         api.getExperimentMetrics(id),
       ]);
-      setTrace(t);
+      setTrace(tr);
       setMetrics(m);
     } catch { /* ignore */ }
     setLoading(false);
@@ -92,8 +94,8 @@ export function ExperimentStudio() {
     <div className="grid h-screen grid-cols-[340px_minmax(0,1fr)] bg-slate-100 text-slate-950">
       <aside className="flex flex-col border-r border-slate-200 bg-white">
         <div className="border-b border-slate-200 px-5 py-4">
-          <h2 className="text-base font-semibold">Experiment Studio</h2>
-          <p className="mt-1 text-xs text-slate-500">Reproducible attack/defense experiments</p>
+          <h2 className="text-base font-semibold">{t("experiment.title")}</h2>
+          <p className="mt-1 text-xs text-slate-500">{t("experiment.subtitle")}</p>
         </div>
         <div className="p-3">
           <button
@@ -101,7 +103,7 @@ export function ExperimentStudio() {
             disabled={loading}
             onClick={quickExperiment}
           >
-            {loading ? "Running..." : "Quick Test Run"}
+            {loading ? t("experiment.running") : t("experiment.quickRun")}
           </button>
         </div>
         <div className="min-h-0 flex-1 space-y-1 overflow-y-auto px-3 pb-4">
@@ -127,12 +129,12 @@ export function ExperimentStudio() {
       <section className="flex min-h-0 flex-col">
         {selectedId ? (
           <div className="flex min-h-0 flex-1 flex-col gap-4 overflow-y-auto p-6">
-            <MetricsPanel metrics={metrics} trace={trace} />
+            <MetricsPanel metrics={metrics} />
             <TracePanel trace={trace} />
           </div>
         ) : (
           <div className="flex flex-1 items-center justify-center text-sm text-slate-500">
-            Select an experiment or create a new one to view results
+            {t("experiment.select")}
           </div>
         )}
       </section>
@@ -140,24 +142,25 @@ export function ExperimentStudio() {
   );
 }
 
-function MetricsPanel({ metrics, trace }: { metrics: Record<string, unknown> | null; trace: AgentEvent[] }) {
+function MetricsPanel({ metrics }: { metrics: Record<string, unknown> | null }) {
+  const { t } = useT();
   if (!metrics) return null;
   return (
     <div className="grid grid-cols-5 gap-3">
       {[
-        { label: "Total Events", value: metrics.total_events },
-        { label: "Propagation Depth", value: metrics.propagation_depth },
-        { label: "Cascade Depth", value: metrics.cascade_depth },
-        { label: "Threats Detected", value: metrics.threats_detected },
-        { label: "Threats Blocked", value: metrics.threats_blocked },
-        { label: "Time to Detection", value: `${(metrics.time_to_detection_ms as number)?.toFixed(0) ?? 0}ms` },
-        { label: "False Positive Rate", value: `${((metrics.false_positive_rate as number ?? 0) * 100).toFixed(1)}%` },
-        { label: "Effectiveness", value: `${((metrics.intervention_effectiveness as number ?? 0) * 100).toFixed(1)}%` },
-        { label: "Detection Latency", value: `${(metrics.detection_latency_ms as number)?.toFixed(0) ?? 0}ms` },
-        { label: "Spread Rate", value: (metrics.contamination_spread_rate as number)?.toFixed(2) ?? "0" },
+        { key: "experiment.totalEvents", value: metrics.total_events },
+        { key: "experiment.propagationDepth", value: metrics.propagation_depth },
+        { key: "experiment.cascadeDepth", value: metrics.cascade_depth },
+        { key: "experiment.threatsDetected", value: metrics.threats_detected },
+        { key: "experiment.threatsBlocked", value: metrics.threats_blocked },
+        { key: "experiment.timeToDetection", value: `${(metrics.time_to_detection_ms as number)?.toFixed(0) ?? 0}ms` },
+        { key: "experiment.falsePositiveRate", value: `${((metrics.false_positive_rate as number ?? 0) * 100).toFixed(1)}%` },
+        { key: "experiment.effectiveness", value: `${((metrics.intervention_effectiveness as number ?? 0) * 100).toFixed(1)}%` },
+        { key: "experiment.detectionLatency", value: `${(metrics.detection_latency_ms as number)?.toFixed(0) ?? 0}ms` },
+        { key: "experiment.spreadRate", value: (metrics.contamination_spread_rate as number)?.toFixed(2) ?? "0" },
       ].map((m) => (
-        <div key={m.label} className="rounded-lg border border-slate-200 bg-white p-3">
-          <div className="text-xs text-slate-500">{m.label}</div>
+        <div key={m.key} className="rounded-lg border border-slate-200 bg-white p-3">
+          <div className="text-xs text-slate-500">{t(m.key)}</div>
           <div className="mt-1 text-lg font-bold text-slate-900">{String(m.value)}</div>
         </div>
       ))}
@@ -166,10 +169,11 @@ function MetricsPanel({ metrics, trace }: { metrics: Record<string, unknown> | n
 }
 
 function TracePanel({ trace }: { trace: AgentEvent[] }) {
+  const { t } = useT();
   return (
     <div className="rounded-lg border border-slate-200 bg-white">
       <div className="border-b border-slate-200 px-4 py-2 text-sm font-semibold">
-        Event Trace ({trace.length})
+        {t("experiment.eventTrace")} ({trace.length})
       </div>
       <div className="max-h-[400px] space-y-1 overflow-y-auto p-3">
         {trace.map((evt, i) => (

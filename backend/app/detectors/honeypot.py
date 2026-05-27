@@ -12,9 +12,19 @@ from app.detectors.base import DetectionResult
 from app.schemas import ActionTaken, AgentEvent, EventStatus
 
 
-GRAY_ZONE_LOW = 0.50
-GRAY_ZONE_HIGH = 0.75
-DEFAULT_HONEYPOT_NODE = "Honeypot_Agent"
+def _get_gray_zone_low() -> float:
+    from app.settings_manager import get_settings_manager
+    return float(get_settings_manager().get_value_sync("detectors", "honeypot.gray_zone_low", 0.50))
+
+
+def _get_gray_zone_high() -> float:
+    from app.settings_manager import get_settings_manager
+    return float(get_settings_manager().get_value_sync("detectors", "honeypot.gray_zone_high", 0.75))
+
+
+def _get_default_honeypot_node() -> str:
+    from app.settings_manager import get_settings_manager
+    return str(get_settings_manager().get_value_sync("agents", "honeypot.default_node", "Honeypot_Agent"))
 
 
 class HoneyPotRouter:
@@ -23,19 +33,22 @@ class HoneyPotRouter:
     @staticmethod
     def should_decoy(result: DetectionResult) -> bool:
         """Confidence falls in gray zone → route to honeypot for intel gathering."""
+        low = _get_gray_zone_low()
+        high = _get_gray_zone_high()
         if result.is_threat:
-            return GRAY_ZONE_LOW <= result.confidence < GRAY_ZONE_HIGH
-        # Also decoy if confidence is high enough to be suspicious but not flagged
+            return low <= result.confidence < high
         if result.confidence >= 0.45 and not result.is_threat:
-            return False  # Don't decoy false positives — let them through
+            return False
         return False
 
     @staticmethod
     def redirect_event(
         event: AgentEvent,
         result: DetectionResult,
-        honeypot_id: str = DEFAULT_HONEYPOT_NODE,
+        honeypot_id: str | None = None,
     ) -> AgentEvent:
+        if honeypot_id is None:
+            honeypot_id = _get_default_honeypot_node()
         """Rewrite the event to target the honeypot agent instead of the original target."""
         return event.model_copy(update={
             "target_node": honeypot_id,

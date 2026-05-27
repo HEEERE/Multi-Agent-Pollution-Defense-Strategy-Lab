@@ -10,6 +10,7 @@ from app.demo_topology import (
     run_agent_to_tool,
     run_gateway_to_agent,
 )
+from app.settings_manager import VALID_CATEGORIES, get_settings_manager
 from app.event_store import get_event_store
 from app.event_store import EventStore
 from app.experiments.runner import ExperimentRunner
@@ -34,6 +35,18 @@ from app.websocket_manager import websocket_manager
 _benchmark_reports: dict[str, BenchmarkReport] = {}
 
 
+def _get_cors_origins() -> list[str]:
+    import os
+    mgr = get_settings_manager()
+    origins_str = mgr.get_value_sync("system", "system.cors_allowed_origins", None)
+    if origins_str and isinstance(origins_str, str) and origins_str.strip():
+        return [o.strip() for o in origins_str.split(",") if o.strip()]
+    env_origins = os.environ.get("CORS_ALLOWED_ORIGINS", "")
+    if env_origins:
+        return [o.strip() for o in env_origins.split(",") if o.strip()]
+    return ["http://localhost:5173", "http://127.0.0.1:5173"]
+
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     await init_event_store()
@@ -50,10 +63,7 @@ app = FastAPI(
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=[
-        "http://localhost:5173",
-        "http://127.0.0.1:5173",
-    ],
+    allow_origins=_get_cors_origins(),
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -77,6 +87,42 @@ async def platform_config() -> dict[str, str | bool]:
         "llm_enabled": settings.llm_enabled,
         "llm_ready": settings.llm_ready,
     }
+
+
+# ── Settings endpoints ───────────────────────────────────────
+
+@app.get("/api/settings")
+async def get_all_settings() -> dict[str, object]:
+    mgr = get_settings_manager()
+    categories = await mgr.get_all()
+    return {"categories": categories, "updated_at": None}
+
+
+@app.get("/api/settings/{category}")
+async def get_settings_category(category: str) -> dict[str, object]:
+    if category not in VALID_CATEGORIES:
+        return {"error": f"Unknown category: {category}"}
+    mgr = get_settings_manager()
+    values = await mgr.get_category(category)
+    return {"category": category, "values": values}
+
+
+@app.put("/api/settings/{category}")
+async def update_settings_category(category: str, payload: dict[str, object]) -> dict[str, object]:
+    if category not in VALID_CATEGORIES:
+        return {"error": f"Unknown category: {category}"}
+    mgr = get_settings_manager()
+    updated = await mgr.update_category(category, payload)
+    return {"status": "saved", "category": category, "updated": updated}
+
+
+@app.post("/api/settings/{category}/reset")
+async def reset_settings_category(category: str) -> dict[str, object]:
+    if category not in VALID_CATEGORIES:
+        return {"error": f"Unknown category: {category}"}
+    mgr = get_settings_manager()
+    values = await mgr.reset_category(category)
+    return {"category": category, "values": values}
 
 
 # ── Event endpoints ──────────────────────────────────────────

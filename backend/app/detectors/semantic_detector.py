@@ -52,15 +52,17 @@ class SemanticDetector(BaseDetector):
 
     def __init__(
         self,
-        threshold: float = 0.65,
-        top_k: int = 5,
-        min_matches: int = 1,
-        auto_calibrate: bool = True,
+        threshold: float | None = None,
+        top_k: int | None = None,
+        min_matches: int | None = None,
+        auto_calibrate: bool | None = None,
     ) -> None:
-        self.threshold = threshold
-        self.top_k = top_k
-        self.min_matches = min_matches
-        self.auto_calibrate = auto_calibrate
+        from app.settings_manager import get_settings_manager
+        mgr = get_settings_manager()
+        self.threshold = threshold if threshold is not None else float(mgr.get_value_sync("detectors", "semantic.threshold", 0.65))
+        self.top_k = top_k if top_k is not None else int(mgr.get_value_sync("detectors", "semantic.top_k", 5))
+        self.min_matches = min_matches if min_matches is not None else int(mgr.get_value_sync("detectors", "semantic.min_matches", 1))
+        self.auto_calibrate = auto_calibrate if auto_calibrate is not None else bool(mgr.get_value_sync("detectors", "semantic.auto_calibrate", True))
         self._category_stats: dict[str, CategoryStats] = defaultdict(CategoryStats)
         self._store = None
 

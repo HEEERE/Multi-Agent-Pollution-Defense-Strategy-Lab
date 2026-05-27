@@ -19,14 +19,18 @@ class DetectorPipeline:
         log_all: bool = True,
         min_severity_for_llm: EventSeverity = EventSeverity.WARNING,
         bus: MessageBus | None = None,
-        fusion_threshold: float = 0.82,
+        fusion_threshold: float | None = None,
     ) -> None:
         self.detectors = detectors
         self.short_circuit = short_circuit
         self.log_all = log_all
         self.min_severity_for_llm = min_severity_for_llm
         self._bus = bus
-        self.fusion_threshold = fusion_threshold
+        if fusion_threshold is not None:
+            self.fusion_threshold = fusion_threshold
+        else:
+            from app.settings_manager import get_settings_manager
+            self.fusion_threshold = float(get_settings_manager().get_value_sync("detectors", "pipeline.fusion_threshold", 0.82))
 
     async def inspect(self, event: AgentEvent) -> AgentEvent | None:
         context = DetectionContext(event=event)

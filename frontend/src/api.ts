@@ -40,6 +40,20 @@ export const api = {
   getExperimentMetrics: (id: string) => request<Record<string, unknown>>(`/api/experiments/${id}/metrics`),
   deleteExperiment: (id: string) => request<{ deleted: number }>(`/api/experiments/${id}`, { method: "DELETE" }),
 
+  // Settings
+  getSettings: () => request<import("./types").SettingsData>("/api/settings"),
+  getSettingsCategory: (category: string) =>
+    request<{ category: string; values: Record<string, unknown> }>(`/api/settings/${category}`),
+  updateSettingsCategory: (category: string, values: Record<string, unknown>) =>
+    request<{ status: string; category: string; updated: number }>(`/api/settings/${category}`, {
+      method: "PUT",
+      body: JSON.stringify(values),
+    }),
+  resetSettingsCategory: (category: string) =>
+    request<{ category: string; values: Record<string, unknown> }>(`/api/settings/${category}/reset`, {
+      method: "POST",
+    }),
+
   // Replay
   startReplay: (traceId: string) => request<Record<string, unknown>>(`/api/replay/${traceId}/start`, { method: "POST" }),
   pauseReplay: (sid: string) => request<Record<string, unknown>>(`/api/replay/${sid}/pause`, { method: "POST" }),

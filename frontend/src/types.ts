@@ -160,3 +160,12 @@ export interface ReplaySession {
   speed_multiplier: number;
   current_timestamp: number | null;
 }
+
+// ── Settings ──────────────────────────────────────────────────
+
+export type SettingsCategory = "detectors" | "llm" | "agents" | "system";
+
+export interface SettingsData {
+  categories: Record<SettingsCategory, Record<string, unknown>>;
+  updated_at: number | null;
+}

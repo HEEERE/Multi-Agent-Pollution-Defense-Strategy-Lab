@@ -97,13 +97,16 @@ class RedTeamAgent(BaseAgent):
         node_id: str,
         bus,
         llm_client,
-        attack_interval_seconds: float = 5.0,
-        max_attacks: int = 20,
+        attack_interval_seconds: float | None = None,
+        max_attacks: int | None = None,
         use_llm_variants: bool = True,
     ) -> None:
         super().__init__(node_id, bus, llm_client)
-        self.attack_interval = attack_interval_seconds
-        self.max_attacks = max_attacks
+        from app.settings_manager import get_settings_manager
+        mgr = get_settings_manager()
+        self.attack_interval = attack_interval_seconds if attack_interval_seconds is not None else float(mgr.get_value_sync("agents", "red_team.attack_interval_seconds", 5.0))
+        self.max_attacks = max_attacks if max_attacks is not None else int(mgr.get_value_sync("agents", "red_team.max_attacks", 20))
+        self._enabled = bool(mgr.get_value_sync("agents", "red_team.enabled", True))
         self.use_llm_variants = use_llm_variants
         self._attack_count = 0
         self._active = False
@@ -126,6 +129,8 @@ class RedTeamAgent(BaseAgent):
         self.bus.subscribe_all(self._track_outcome)
 
     async def _on_input(self, event: AgentEvent) -> None:
+        if not self._enabled:
+            return
         if not self._active:
             self._active = True
             self._task = asyncio.create_task(self._attack_loop())

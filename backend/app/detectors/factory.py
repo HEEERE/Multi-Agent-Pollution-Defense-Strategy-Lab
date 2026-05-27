@@ -11,6 +11,7 @@ from app.schemas import (
     DetectorConfig,
     DetectorPipelineConfig,
     DetectorType,
+    EventSeverity,
     MonitorLevel,
 )
 
@@ -66,29 +67,46 @@ def create_default_pipeline(
     llm_client: LLMClient | None = None,
     bus: MessageBus | None = None,
 ) -> DetectorPipeline:
+    from app.settings_manager import get_settings_manager
+    mgr = get_settings_manager()
+
+    l1_enabled = mgr.get_value_sync("detectors", "regex.enabled", True)
+    l1_action = mgr.get_value_sync("detectors", "regex.action_policy", "block")
+    l2_threshold = mgr.get_value_sync("detectors", "semantic.threshold", 0.65)
+    l2_top_k = mgr.get_value_sync("detectors", "semantic.top_k", 5)
+    l2_action = mgr.get_value_sync("detectors", "semantic.action_policy", "quarantine")
+    l3_enabled = mgr.get_value_sync("detectors", "llm_intent.enabled", True)
+    l3_action = mgr.get_value_sync("detectors", "llm_intent.action_policy", "quarantine")
+    short_circuit = mgr.get_value_sync("detectors", "pipeline.short_circuit", True)
+    log_all = mgr.get_value_sync("detectors", "pipeline.log_all_detections", True)
+    min_sev = mgr.get_value_sync("detectors", "pipeline.min_severity_for_llm", "warning")
+
     config = DetectorPipelineConfig(
         detectors=[
             DetectorConfig(
                 detector_id="regex",
                 detector_type=DetectorType.REGEX,
+                enabled=bool(l1_enabled),
                 level=MonitorLevel.HEURISTIC,
-                action_policy=ActionPolicy.BLOCK,
+                action_policy=ActionPolicy(str(l1_action)),
             ),
             DetectorConfig(
                 detector_id="semantic",
                 detector_type=DetectorType.SEMANTIC,
                 level=MonitorLevel.FEATURE,
-                action_policy=ActionPolicy.QUARANTINE,
-                params={"threshold": 0.65, "top_k": 5},
+                action_policy=ActionPolicy(str(l2_action)),
+                params={"threshold": float(l2_threshold), "top_k": int(l2_top_k)},
             ),
             DetectorConfig(
                 detector_id="llm_intent",
                 detector_type=DetectorType.LLM_INTENT,
+                enabled=bool(l3_enabled),
                 level=MonitorLevel.LLM_INTENT,
-                action_policy=ActionPolicy.QUARANTINE,
+                action_policy=ActionPolicy(str(l3_action)),
             ),
         ],
-        short_circuit=True,
-        log_all_detections=True,
+        short_circuit=bool(short_circuit),
+        log_all_detections=bool(log_all),
+        min_severity_for_llm=EventSeverity(str(min_sev)),
     )
     return create_pipeline(config, llm_client, bus)

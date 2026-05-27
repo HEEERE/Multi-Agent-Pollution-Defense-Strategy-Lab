@@ -33,10 +33,19 @@ class LLMIntentDetector(BaseDetector):
     def __init__(
         self,
         llm_client: LLMClient | None = None,
-        self_consistency: bool = True,
+        self_consistency: bool | None = None,
     ) -> None:
         self.llm_client = llm_client
-        self.self_consistency = self_consistency
+        if self_consistency is not None:
+            self.self_consistency = self_consistency
+        else:
+            from app.settings_manager import get_settings_manager
+            mgr = get_settings_manager()
+            self.self_consistency = bool(mgr.get_value_sync("detectors", "llm_intent.self_consistency", True))
+            votes = int(mgr.get_value_sync("detectors", "llm_intent.self_consistency_votes", 3))
+            # clamp votes to available jitter temperatures
+            global SELF_CONSISTENCY_SAMPLES, TEMPERATURE_JITTER
+            SELF_CONSISTENCY_SAMPLES = min(votes, len(TEMPERATURE_JITTER))
         self._fallback_markers = {
             "simulate consent",
             "operator approved",

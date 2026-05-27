@@ -1,8 +1,10 @@
 import { X } from "lucide-react";
 import { useStore } from "../store";
+import { useT } from "../i18n/context";
 import { statusPalette } from "../graph";
 
 export function NodeDetailPanel() {
+  const { t } = useT();
   const selectedNodeId = useStore((s) => s.selectedNodeId);
   const selectNode = useStore((s) => s.selectNode);
   const nodes = useStore((s) => s.nodes);
@@ -34,7 +36,7 @@ export function NodeDetailPanel() {
       </div>
       <div className="max-h-[380px] space-y-1 overflow-y-auto p-3">
         <div className="mb-2 flex items-center gap-3 text-xs">
-          <span className="font-medium text-slate-600">Event history ({nodeEvents.length})</span>
+          <span className="font-medium text-slate-600">{t("nodeDetail.history")} ({nodeEvents.length})</span>
         </div>
         {nodeEvents.slice(0, 25).map((evt, i) => (
           <div

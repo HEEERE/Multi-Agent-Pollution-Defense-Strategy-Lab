@@ -251,6 +251,24 @@ class ReplaySession(BaseModel):
     current_timestamp: float | None = None
 
 
+# ── Settings ──────────────────────────────────────────────────
+
+class SettingsCategory(StrEnum):
+    DETECTORS = "detectors"
+    LLM = "llm"
+    AGENTS = "agents"
+    SYSTEM = "system"
+
+
+class SettingsPayload(BaseModel):
+    category: str
+    values: dict[str, Any] = Field(default_factory=dict)
+
+
+class SettingsResetRequest(BaseModel):
+    category: str
+
+
 # ── Honeypot Intelligence ──────────────────────────────────────
 
 class HoneyPotRecord(BaseModel):

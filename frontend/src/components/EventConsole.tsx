@@ -1,5 +1,5 @@
 import { AlertTriangle, Ban, CircleCheck, ShieldAlert } from "lucide-react";
-
+import { useT } from "../i18n/context";
 import { statusPalette } from "../graph";
 import type { AgentEvent } from "../types";
 
@@ -19,27 +19,23 @@ function LevelBadge({ level }: { level: number }) {
   );
 }
 
-interface EventConsoleProps {
-  events: AgentEvent[];
-  connected: boolean;
-}
-
-export function EventConsole({ events, connected }: EventConsoleProps) {
+export function EventConsole({ events, connected }: { events: AgentEvent[]; connected: boolean }) {
+  const { t } = useT();
   return (
     <aside className="flex h-full min-h-0 w-full flex-col border-l border-slate-200 bg-white">
       <div className="border-b border-slate-200 px-5 py-4">
         <div className="flex items-center justify-between gap-3">
-          <h2 className="text-sm font-semibold text-slate-950">Live Security Console</h2>
+          <h2 className="text-sm font-semibold text-slate-950">{t("eventConsole.title")}</h2>
           <span className="inline-flex items-center gap-2 text-xs font-medium text-slate-600">
             <span className={`h-2 w-2 rounded-full ${connected ? "bg-emerald-500" : "bg-rose-500"}`} />
-            {connected ? "Connected" : "Offline"}
+            {connected ? t("eventConsole.connected") : t("eventConsole.offline")}
           </span>
         </div>
       </div>
       <div className="min-h-0 flex-1 space-y-3 overflow-y-auto px-4 py-4">
         {events.length === 0 ? (
           <div className="rounded-lg border border-dashed border-slate-300 px-4 py-6 text-sm text-slate-500">
-            Waiting for WebSocket events
+            {t("eventConsole.waiting")}
           </div>
         ) : (
           events.map((event, index) => <EventRow key={`${event.timestamp}-${index}`} event={event} />)
@@ -50,6 +46,7 @@ export function EventConsole({ events, connected }: EventConsoleProps) {
 }
 
 function EventRow({ event }: { event: AgentEvent }) {
+  const { t } = useT();
   const palette = statusPalette[event.status];
   const Icon = event.action_taken === "block" ? Ban : event.action_taken === "alert" ? ShieldAlert : event.status === "safe" ? CircleCheck : AlertTriangle;
   const isIntercepted = event.monitor_level > 0 && event.action_taken !== "none";
@@ -73,7 +70,7 @@ function EventRow({ event }: { event: AgentEvent }) {
           </div>
           <p className="mt-2 break-words text-xs leading-5 text-slate-600">{event.payload_snippet}</p>
           <div className="mt-2 text-xs font-medium text-slate-700">
-            action: {event.action_taken}
+            {t("eventConsole.action")}: {event.action_taken}
             {detectionReason(event.metadata) && (
               <span className="ml-2 text-slate-500">({detectionReason(event.metadata)})</span>
             )}

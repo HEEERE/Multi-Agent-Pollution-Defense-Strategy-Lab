@@ -19,12 +19,14 @@ import { NodeDetailPanel } from "../components/NodeDetailPanel";
 import { PlaybookPanel } from "../components/PlaybookPanel";
 import { initialEdges, initialNodes, statusPalette } from "../graph";
 import { useStore } from "../store";
+import { useT } from "../i18n/context";
 import type { AgentEvent, NodeData } from "../types";
 
 const WS_URL = import.meta.env.VITE_WS_URL ?? "ws://127.0.0.1:8000/ws/events";
 const API_URL = import.meta.env.VITE_API_URL ?? "http://127.0.0.1:8000";
 
 export function LiveMonitor() {
+  const { t } = useT();
   const nodes = useStore((s) => s.nodes);
   const edges = useStore((s) => s.edges);
   const events = useStore((s) => s.events);
@@ -44,7 +46,6 @@ export function LiveMonitor() {
 
   const nodeTypes = useMemo<NodeTypes>(() => ({ agentNode: AgentNode }), []);
 
-  // Init nodes
   useEffect(() => {
     if (nodes.length === 0) {
       setNodes(initialNodes);
@@ -52,7 +53,6 @@ export function LiveMonitor() {
     }
   }, [nodes.length, setNodes, setEdges]);
 
-  // WebSocket
   useEffect(() => {
     const socket = new WebSocket(WS_URL);
     socket.onopen = () => setConnected(true);
@@ -68,7 +68,6 @@ export function LiveMonitor() {
     return () => socket.close();
   }, [applyEvent, setConnected]);
 
-  // Load playbooks
   useEffect(() => {
     fetch(`${API_URL}/api/playbooks`)
       .then((r) => r.json())
@@ -95,15 +94,15 @@ export function LiveMonitor() {
         <header className="flex h-16 shrink-0 items-center justify-between border-b border-slate-200 bg-white px-6">
           <div>
             <h1 className="text-base font-semibold tracking-normal text-slate-950">
-              Multi-Agent Pollution Defense Console
+              {t("liveMonitor.title")}
             </h1>
-            <p className="mt-1 text-xs text-slate-500">Live monitoring with pluggable detector pipeline</p>
+            <p className="mt-1 text-xs text-slate-500">{t("liveMonitor.subtitle")}</p>
           </div>
           <div className="flex items-center gap-3 text-xs font-medium text-slate-600">
-            <StatusLegend label="Safe" color={statusPalette.safe.node} />
-            <StatusLegend label="Challenged" color={statusPalette.challenged.node} />
-            <StatusLegend label="Infected" color={statusPalette.infected.node} />
-            <StatusLegend label="Quarantined" color={statusPalette.quarantined.node} />
+            <StatusLegend label={t("liveMonitor.safe")} color={statusPalette.safe.node} />
+            <StatusLegend label={t("liveMonitor.challenged")} color={statusPalette.challenged.node} />
+            <StatusLegend label={t("liveMonitor.infected")} color={statusPalette.infected.node} />
+            <StatusLegend label={t("liveMonitor.quarantined")} color={statusPalette.quarantined.node} />
           </div>
         </header>
         <div className="relative min-h-0 flex-1">

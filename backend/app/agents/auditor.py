@@ -34,13 +34,6 @@ AUDITOR_SYSTEM_PROMPT = (
     "followed by a one-sentence reason."
 )
 
-REPUTATION_INITIAL = 1.0
-REPUTATION_RECOVERY_RATE = 0.02
-REPUTATION_BLOCK_THRESHOLD = 0.30
-REPUTATION_DECAY_INTERVAL = 60.0
-REPUTATION_DECAY_RATE = 0.05
-
-
 class AuditorAgent(BaseAgent):
     def __init__(
         self,
@@ -51,6 +44,14 @@ class AuditorAgent(BaseAgent):
     ) -> None:
         super().__init__(node_id, bus, llm_client)
         self.protected_nodes = protected_nodes or []
+
+        from app.settings_manager import get_settings_manager
+        mgr = get_settings_manager()
+        self._reputation_initial = float(mgr.get_value_sync("agents", "auditor.reputation_initial", 1.0))
+        self._reputation_recovery_rate = float(mgr.get_value_sync("agents", "auditor.reputation_recovery_rate", 0.02))
+        self._reputation_block_threshold = float(mgr.get_value_sync("agents", "auditor.reputation_block_threshold", 0.30))
+        self._reputation_decay_interval = float(mgr.get_value_sync("agents", "auditor.reputation_decay_interval", 60.0))
+        self._reputation_decay_rate = float(mgr.get_value_sync("agents", "auditor.reputation_decay_rate", 0.05))
 
         # Reputation system
         self._reputation: dict[str, float] = {}
@@ -66,14 +67,14 @@ class AuditorAgent(BaseAgent):
     def get_reputation(self, node_id: str) -> float:
         """Return current reputation score for a given agent."""
         self._apply_time_decay(node_id)
-        return self._reputation.get(node_id, REPUTATION_INITIAL)
+        return self._reputation.get(node_id, self._reputation_initial)
 
     def get_all_reputations(self) -> dict[str, float]:
         """Return reputation scores for all tracked agents."""
         for nid in list(self._last_event_time.keys()):
             self._apply_time_decay(nid)
         return {
-            nid: self._reputation.get(nid, REPUTATION_INITIAL)
+            nid: self._reputation.get(nid, self._reputation_initial)
             for nid in self._last_event_time
         }
 
@@ -82,16 +83,16 @@ class AuditorAgent(BaseAgent):
         if node_id not in self._last_event_time:
             return
         elapsed = time() - self._last_event_time[node_id]
-        if elapsed > REPUTATION_DECAY_INTERVAL:
-            current = self._reputation.get(node_id, REPUTATION_INITIAL)
-            periods = int(elapsed / REPUTATION_DECAY_INTERVAL)
-            recovery = min(REPUTATION_DECAY_RATE * periods, 0.15)
-            self._reputation[node_id] = min(REPUTATION_INITIAL, current + recovery)
+        if elapsed > self._reputation_decay_interval:
+            current = self._reputation.get(node_id, self._reputation_initial)
+            periods = int(elapsed / self._reputation_decay_interval)
+            recovery = min(self._reputation_decay_rate * periods, 0.15)
+            self._reputation[node_id] = min(self._reputation_initial, current + recovery)
             self._last_event_time[node_id] = time()
 
     def _reduce_reputation(self, node_id: str, confidence: float) -> float:
         """Reduce an agent's reputation and return the new value."""
-        current = self._reputation.get(node_id, REPUTATION_INITIAL)
+        current = self._reputation.get(node_id, self._reputation_initial)
         penalty = 0.15 + confidence * 0.25  # 0.15–0.40 range
         new_rep = max(0.0, current - penalty)
         self._reputation[node_id] = new_rep
@@ -100,8 +101,8 @@ class AuditorAgent(BaseAgent):
 
     def _recover_reputation(self, node_id: str) -> float:
         """Recover reputation slightly on a safe event."""
-        current = self._reputation.get(node_id, REPUTATION_INITIAL)
-        new_rep = min(REPUTATION_INITIAL, current + REPUTATION_RECOVERY_RATE)
+        current = self._reputation.get(node_id, self._reputation_initial)
+        new_rep = min(self._reputation_initial, current + self._reputation_recovery_rate)
         self._reputation[node_id] = new_rep
         self._last_event_time[node_id] = time()
         return new_rep
@@ -132,8 +133,8 @@ class AuditorAgent(BaseAgent):
             return
 
         if verdict == "NEEDS_CLARIFICATION":
-            rep = self._reputation.get(event.source_node, REPUTATION_INITIAL)
-            if rep < REPUTATION_BLOCK_THRESHOLD:
+            rep = self._reputation.get(event.source_node, self._reputation_initial)
+            if rep < self._reputation_block_threshold:
                 await self._block(event,
                     f"Reputation too low ({rep:.2f}) for dialogue — action blocked.")
             else:
@@ -143,7 +144,7 @@ class AuditorAgent(BaseAgent):
 
         if verdict == "THREAT_DETECTED":
             rep = self._reduce_reputation(event.source_node, 0.7)
-            if rep < REPUTATION_BLOCK_THRESHOLD:
+            if rep < self._reputation_block_threshold:
                 await self._block(event,
                     f"Threat detected. Reputation critically low ({rep:.2f}). Action blocked.")
             else:
@@ -167,8 +168,8 @@ class AuditorAgent(BaseAgent):
                 self._recover_reputation(event.source_node)
                 return
 
-            rep = self._reputation.get(event.source_node, REPUTATION_INITIAL)
-            if rep < REPUTATION_BLOCK_THRESHOLD:
+            rep = self._reputation.get(event.source_node, self._reputation_initial)
+            if rep < self._reputation_block_threshold:
                 await self._block(event, f"Reputation exhausted ({rep:.2f}). Agent blocked.")
                 return
 
