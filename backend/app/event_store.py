@@ -41,6 +41,14 @@ CREATE TABLE IF NOT EXISTS experiments (
 );
 """
 
+CREATE_BENCHMARK_TABLE = """
+CREATE TABLE IF NOT EXISTS benchmark_reports (
+    report_id TEXT PRIMARY KEY,
+    timestamp REAL NOT NULL,
+    report_json TEXT NOT NULL DEFAULT '{}'
+);
+"""
+
 INDEXES = [
     "CREATE INDEX IF NOT EXISTS idx_events_trace_id ON events(trace_id);",
     "CREATE INDEX IF NOT EXISTS idx_events_timestamp ON events(timestamp);",
@@ -148,6 +156,7 @@ class EventStore:
             await self._conn.execute("PRAGMA foreign_keys=ON;")
             await self._conn.execute(CREATE_EVENTS_TABLE)
             await self._conn.execute(CREATE_EXPERIMENTS_TABLE)
+            await self._conn.execute(CREATE_BENCHMARK_TABLE)
             for col_name, col_ddl in MIGRATION_COLUMNS:
                 await _ensure_column(self._conn, "events", col_name, col_ddl)
             for idx in INDEXES:
@@ -202,7 +211,7 @@ class EventStore:
     async def get_trace_ids(self, limit: int = 50, offset: int = 0) -> list[str]:
         conn = await self._get_conn()
         cursor = await conn.execute(
-            "SELECT DISTINCT trace_id FROM events ORDER BY trace_id DESC LIMIT ? OFFSET ?",
+            "SELECT trace_id FROM events GROUP BY trace_id ORDER BY MAX(timestamp) DESC LIMIT ? OFFSET ?",
             (limit, offset),
         )
         return [row["trace_id"] for row in await cursor.fetchall()]
@@ -336,6 +345,35 @@ class EventStore:
         values = list(updates.values()) + [experiment_id]
         await conn.execute(f"UPDATE experiments SET {sets} WHERE experiment_id = ?", values)
         await conn.commit()
+
+    # ── Benchmark persistence ──────────────────────────────────
+
+    async def store_benchmark_report(self, report: dict) -> None:
+        conn = await self._get_conn()
+        import json as _json
+        await conn.execute(
+            "INSERT OR REPLACE INTO benchmark_reports (report_id, timestamp, report_json) VALUES (?, ?, ?)",
+            (report["report_id"], report["timestamp"], _json.dumps(report, ensure_ascii=False)),
+        )
+        await conn.commit()
+
+    async def get_benchmark_reports(self) -> list[dict]:
+        conn = await self._get_conn()
+        import json as _json
+        cursor = await conn.execute(
+            "SELECT * FROM benchmark_reports ORDER BY timestamp DESC"
+        )
+        rows = await cursor.fetchall()
+        return [_json.loads(row["report_json"]) for row in rows]
+
+    async def get_benchmark_report(self, report_id: str) -> dict | None:
+        conn = await self._get_conn()
+        import json as _json
+        cursor = await conn.execute(
+            "SELECT * FROM benchmark_reports WHERE report_id = ?", (report_id,)
+        )
+        row = await cursor.fetchone()
+        return _json.loads(row["report_json"]) if row else None
 
 
 _event_store: EventStore | None = None

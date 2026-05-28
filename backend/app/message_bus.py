@@ -2,7 +2,7 @@ from collections import deque
 from collections.abc import Awaitable, Callable
 from contextvars import ContextVar
 
-from app.schemas import AgentEvent
+from app.schemas import ActionTaken, AgentEvent
 
 EventHandler = Callable[[AgentEvent], Awaitable[None]]
 MonitorHook = Callable[[AgentEvent], Awaitable[AgentEvent | None]]
@@ -96,6 +96,9 @@ class MessageBus:
                 pass
 
         await self._broadcast(inspected_event)
+
+        if inspected_event.action_taken in (ActionTaken.BLOCK, ActionTaken.ISOLATE):
+            return inspected_event
 
         target_handler = self._handlers.get(inspected_event.target_node)
         if target_handler is not None:

@@ -1,8 +1,9 @@
 import asyncio
+import uuid
 from dataclasses import dataclass
 
 from app.message_bus import message_bus
-from app.schemas import ActionTaken, AgentEvent, EventStatus, EventType
+from app.schemas import ActionTaken, AgentEvent, EventSpec, EventStatus, EventType
 
 
 @dataclass(frozen=True)
@@ -10,24 +11,18 @@ class Playbook:
     id: str
     name: str
     description: str
-    events: tuple[AgentEvent, ...]
+    events: tuple[EventSpec, ...]
 
 
-def event(
-    event_type: EventType,
-    source_node: str,
-    target_node: str,
-    payload_snippet: str,
-    status: EventStatus,
-    action_taken: ActionTaken,
-) -> AgentEvent:
+def build_event(spec: EventSpec, trace_id: str) -> AgentEvent:
     return AgentEvent(
-        event_type=event_type,
-        source_node=source_node,
-        target_node=target_node,
-        payload_snippet=payload_snippet,
-        status=status,
-        action_taken=action_taken,
+        trace_id=trace_id,
+        event_type=spec.event_type,
+        source_node=spec.source_node,
+        target_node=spec.target_node,
+        payload_snippet=spec.payload_snippet,
+        status=spec.status,
+        action_taken=spec.action_taken,
     )
 
 
@@ -37,7 +32,7 @@ PLAYBOOKS: dict[str, Playbook] = {
         name="Playbook A: Explicit Privilege Escalation",
         description="A direct jailbreak is blocked at the Gateway by Level 1 regex heuristics.",
         events=(
-            event(
+            EventSpec(
                 EventType.INPUT,
                 "Gateway",
                 "Task_Agent_A",
@@ -52,7 +47,7 @@ PLAYBOOKS: dict[str, Playbook] = {
         name="Playbook B: Covert Context Poisoning",
         description="A poisoned retrieval paragraph propagates from Agent_A to Agent_B.",
         events=(
-            event(
+            EventSpec(
                 EventType.INPUT,
                 "Gateway",
                 "Task_Agent_A",
@@ -60,7 +55,7 @@ PLAYBOOKS: dict[str, Playbook] = {
                 EventStatus.SAFE,
                 ActionTaken.NONE,
             ),
-            event(
+            EventSpec(
                 EventType.COMMUNICATION,
                 "Task_Agent_A",
                 "Task_Agent_B",
@@ -68,7 +63,7 @@ PLAYBOOKS: dict[str, Playbook] = {
                 EventStatus.SAFE,
                 ActionTaken.NONE,
             ),
-            event(
+            EventSpec(
                 EventType.TOOL_CALL,
                 "Task_Agent_B",
                 "Tool_KnowledgeGraph",
@@ -83,7 +78,7 @@ PLAYBOOKS: dict[str, Playbook] = {
         name="Playbook C: Cognitive Deception Quarantine",
         description="Intent-level deception is detected by the Level 3 LLM judgement stub.",
         events=(
-            event(
+            EventSpec(
                 EventType.INPUT,
                 "Gateway",
                 "Task_Agent_A",
@@ -91,7 +86,7 @@ PLAYBOOKS: dict[str, Playbook] = {
                 EventStatus.SAFE,
                 ActionTaken.NONE,
             ),
-            event(
+            EventSpec(
                 EventType.COMMUNICATION,
                 "Task_Agent_A",
                 "Task_Agent_B",
@@ -99,7 +94,7 @@ PLAYBOOKS: dict[str, Playbook] = {
                 EventStatus.SAFE,
                 ActionTaken.NONE,
             ),
-            event(
+            EventSpec(
                 EventType.INTERVENTION,
                 "Auditor_Prime",
                 "Task_Agent_B",
@@ -114,7 +109,7 @@ PLAYBOOKS: dict[str, Playbook] = {
         name="Playbook D: Safe Collaboration",
         description="A benign task moves through the bus and tool layer without intervention.",
         events=(
-            event(
+            EventSpec(
                 EventType.INPUT,
                 "Gateway",
                 "Task_Agent_A",
@@ -122,7 +117,7 @@ PLAYBOOKS: dict[str, Playbook] = {
                 EventStatus.SAFE,
                 ActionTaken.NONE,
             ),
-            event(
+            EventSpec(
                 EventType.COMMUNICATION,
                 "Task_Agent_A",
                 "Task_Agent_B",
@@ -130,7 +125,7 @@ PLAYBOOKS: dict[str, Playbook] = {
                 EventStatus.SAFE,
                 ActionTaken.NONE,
             ),
-            event(
+            EventSpec(
                 EventType.TOOL_CALL,
                 "Task_Agent_B",
                 "Tool_RAG_Vector",
@@ -145,7 +140,7 @@ PLAYBOOKS: dict[str, Playbook] = {
         name="Playbook E: Tool Memory Contamination",
         description="A tool receives suspicious memory content and returns infected context.",
         events=(
-            event(
+            EventSpec(
                 EventType.TOOL_CALL,
                 "Task_Agent_A",
                 "Tool_KnowledgeGraph",
@@ -153,7 +148,7 @@ PLAYBOOKS: dict[str, Playbook] = {
                 EventStatus.SAFE,
                 ActionTaken.NONE,
             ),
-            event(
+            EventSpec(
                 EventType.TOOL_CALL,
                 "Tool_KnowledgeGraph",
                 "Task_Agent_B",
@@ -168,7 +163,7 @@ PLAYBOOKS: dict[str, Playbook] = {
         name="Playbook F: Monitor Recovery",
         description="The monitor resets a quarantined node after a clean handoff.",
         events=(
-            event(
+            EventSpec(
                 EventType.INTERVENTION,
                 "Auditor_Prime",
                 "Task_Agent_B",
@@ -176,7 +171,7 @@ PLAYBOOKS: dict[str, Playbook] = {
                 EventStatus.SAFE,
                 ActionTaken.NONE,
             ),
-            event(
+            EventSpec(
                 EventType.COMMUNICATION,
                 "Task_Agent_B",
                 "Tool_RAG_Vector",
@@ -198,9 +193,11 @@ def list_playbooks() -> list[dict[str, str]]:
 
 async def run_playbook(playbook_id: str, delay_seconds: float = 0.85) -> list[AgentEvent]:
     playbook = PLAYBOOKS[playbook_id]
+    trace_id = f"playbook_{playbook_id}_{uuid.uuid4().hex[:8]}"
     emitted: list[AgentEvent] = []
 
-    for item in playbook.events:
+    for spec in playbook.events:
+        item = build_event(spec, trace_id)
         result = await message_bus.publish(item)
         if result is not None:
             emitted.append(result)

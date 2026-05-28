@@ -20,12 +20,14 @@ class DetectorPipeline:
         min_severity_for_llm: EventSeverity = EventSeverity.WARNING,
         bus: MessageBus | None = None,
         fusion_threshold: float | None = None,
+        policy_engine=None,
     ) -> None:
         self.detectors = detectors
         self.short_circuit = short_circuit
         self.log_all = log_all
         self.min_severity_for_llm = min_severity_for_llm
         self._bus = bus
+        self._policy_engine = policy_engine
         if fusion_threshold is not None:
             self.fusion_threshold = fusion_threshold
         else:
@@ -89,7 +91,7 @@ class DetectorPipeline:
             action = result.suggested_action
 
             if action in (ActionTaken.BLOCK, ActionTaken.QUARANTINE):
-                new_status = EventStatus.QUARANTINED if action == ActionTaken.QUARANTINE else EventStatus.INFECTED
+                new_status = EventStatus.QUARANTINED
                 final_event = final_event.model_copy(update={
                     "status": new_status,
                     "action_taken": action,
@@ -156,6 +158,17 @@ class DetectorPipeline:
                     await self._emit_intervention(final_event,
                         f"Bayesian fusion alert: compound confidence {fused:.3f}")
 
+        if self._policy_engine is not None:
+            decision = self._policy_engine.evaluate(final_event)
+            final_event = final_event.model_copy(update={
+                "policy_decision": decision.action,
+                "policy_id": decision.policy_id,
+                "metadata": {
+                    **final_event.metadata,
+                    "policy": decision.model_dump(),
+                },
+            })
+
         return final_event
 
     @staticmethod
@@ -171,7 +184,7 @@ class DetectorPipeline:
             return
         intervention = AgentEvent(
             event_type=EventType.INTERVENTION,
-            source_node="Monitor",
+            source_node="Auditor_Prime",
             target_node=event.source_node,
             payload_snippet=reason,
             status=event.status,

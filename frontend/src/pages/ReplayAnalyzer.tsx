@@ -27,7 +27,7 @@ export function ReplayAnalyzer() {
     setContamination(null);
     try {
       const result = await api.startReplay(traceId);
-      setSession({ ...result, trace_id: traceId, speed_multiplier: 1, current_index: 0 } as unknown as ReplaySession);
+      setSession(result as unknown as ReplaySession);
       const allEvents = await api.getTrace(traceId);
       setEvents(allEvents);
       const cMetrics = await api.getContaminationMetrics(traceId);

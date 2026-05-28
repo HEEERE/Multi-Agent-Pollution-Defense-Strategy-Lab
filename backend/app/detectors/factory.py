@@ -6,6 +6,7 @@ from app.detectors.regex_detector import RegexDetector
 from app.detectors.semantic_detector import SemanticDetector
 from app.llm.base import LLMClient
 from app.message_bus import MessageBus
+from app.policy.engine import PolicyEngine
 from app.schemas import (
     ActionPolicy,
     DetectorConfig,
@@ -60,6 +61,7 @@ def create_pipeline(
         log_all=config.log_all_detections,
         min_severity_for_llm=config.min_severity_for_llm,
         bus=bus,
+        policy_engine=PolicyEngine(),
     )
 
 

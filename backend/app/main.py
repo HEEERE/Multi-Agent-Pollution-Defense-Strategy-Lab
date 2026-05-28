@@ -7,6 +7,7 @@ from app.core.config import get_settings
 from app.demo_topology import (
     honeypot,
     init_event_store,
+    rebuild_runtime_pipeline,
     run_agent_to_tool,
     run_gateway_to_agent,
 )
@@ -29,14 +30,11 @@ from app.schemas import (
 )
 from app.benchmark.runner import BenchmarkRunner
 from app.llm.factory import get_llm_client
-from app.schemas import BenchmarkReport
 from app.websocket_manager import websocket_manager
 from app.trace_graph.builder import TraceGraphBuilder
 from app.trace_graph.analyzer import ContaminationAnalyzer
 from app.policy.engine import PolicyEngine
 from app.policy.default_policies import DEFAULT_POLICIES
-
-_benchmark_reports: dict[str, BenchmarkReport] = {}
 
 
 def _get_cors_origins() -> list[str]:
@@ -55,6 +53,7 @@ def _get_cors_origins() -> list[str]:
 async def lifespan(app: FastAPI):
     await init_settings_manager()
     await init_event_store()
+    rebuild_runtime_pipeline()
     yield
 
 
@@ -119,6 +118,7 @@ async def update_settings_category(category: str, payload: dict[str, object]) ->
         raise HTTPException(status_code=404, detail=f"Unknown category: {category}")
     mgr = get_settings_manager()
     updated = await mgr.update_category(category, payload)
+    rebuild_runtime_pipeline()
     return {"status": "saved", "category": category, "updated": updated}
 
 
@@ -405,28 +405,29 @@ async def get_replay_state(session_id: str) -> dict:
 
 @app.post("/api/benchmark/run")
 async def run_benchmark() -> dict:
-    runner = BenchmarkRunner(llm_client=get_llm_client(), event_store=await get_event_store())
+    store = await get_event_store()
+    runner = BenchmarkRunner(llm_client=get_llm_client(), event_store=store)
     report = await runner.run()
-    _benchmark_reports[report.report_id] = report
+    await store.store_benchmark_report(report.model_dump(mode="json"))
     return report.model_dump(mode="json")
 
 
 @app.get("/api/benchmark/reports")
 async def list_benchmark_reports() -> list[dict]:
+    store = await get_event_store()
+    reports = await store.get_benchmark_reports()
     return [
-        {"report_id": r.report_id, "timestamp": r.timestamp,
-         "total_payloads": r.total_payloads, "overall_recall": r.overall_recall,
-         "overall_fpr": r.overall_fpr}
-        for r in _benchmark_reports.values()
+        {"report_id": r.get("report_id"), "timestamp": r.get("timestamp"),
+         "total_payloads": r.get("total_payloads"), "overall_recall": r.get("overall_recall"),
+         "overall_fpr": r.get("overall_fpr")}
+        for r in reports
     ]
 
 
 @app.get("/api/benchmark/reports/{report_id}")
 async def get_benchmark_report(report_id: str) -> dict | None:
-    report = _benchmark_reports.get(report_id)
-    if report is None:
-        return None
-    return report.model_dump(mode="json")
+    store = await get_event_store()
+    return await store.get_benchmark_report(report_id)
 
 
 # ── Honeypot Intelligence ────────────────────────────────────

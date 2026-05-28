@@ -1,4 +1,5 @@
 import uuid
+from dataclasses import dataclass
 from enum import IntEnum, StrEnum
 from time import time
 from typing import Any
@@ -61,6 +62,18 @@ class ActionPolicy(StrEnum):
     BLOCK = "block"
     QUARANTINE = "quarantine"
     ISOLATE = "isolate"
+
+
+# ── Event spec (template for playbooks) ────────────────────────
+
+@dataclass(frozen=True)
+class EventSpec:
+    event_type: EventType
+    source_node: str
+    target_node: str
+    payload_snippet: str
+    status: EventStatus
+    action_taken: ActionTaken
 
 
 # ── Core event model ─────────────────────────────────────────

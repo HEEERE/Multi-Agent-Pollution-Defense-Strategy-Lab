@@ -32,16 +32,34 @@ EDGE_KIND_MAP: dict[str, str] = {
 
 
 def _compute_contamination_score(event: AgentEvent) -> float:
+    if event.contamination_score > 0:
+        return event.contamination_score
     base = STATUS_SCORE.get(event.status.value, 0.0)
     bonus = 0.0
-    risk_tags = event.metadata.get("risk_tags", [])
+    risk_tags = event.risk_tags or event.metadata.get("risk_tags", [])
     if isinstance(risk_tags, list):
         for tag in risk_tags:
             bonus += TAG_BONUS.get(tag, 0.0)
     return min(base + bonus, 1.0)
 
 
+def _infer_node_type(node_id: str) -> str:
+    if node_id.startswith("Tool_") or node_id.startswith("FakeTool_"):
+        return "tool"
+    if node_id.startswith("Auditor_"):
+        return "monitor"
+    if node_id == "Gateway":
+        return "gateway"
+    if node_id.startswith("Honeypot_"):
+        return "agent"
+    if node_id.startswith("Red_"):
+        return "agent"
+    return "agent"
+
+
 def _infer_edge_kind(event: AgentEvent) -> str:
+    if event.edge_kind:
+        return event.edge_kind
     meta = event.metadata
     if meta.get("memory_op") == "write":
         return "memory_write"
@@ -69,14 +87,14 @@ class TraceGraphBuilder:
                 if node_id not in node_map:
                     node_map[node_id] = TraceNode(
                         node_id=node_id,
-                        node_type="agent",
+                        node_type=_infer_node_type(node_id),
                         label=node_id,
                         contamination_score=0.0,
                     )
                 node_scores.setdefault(node_id, []).append(score)
 
             edge_kind = _infer_edge_kind(event)
-            risk_tags = event.metadata.get("risk_tags", [])
+            risk_tags = event.risk_tags or event.metadata.get("risk_tags", [])
             if isinstance(risk_tags, str):
                 risk_tags = []
 

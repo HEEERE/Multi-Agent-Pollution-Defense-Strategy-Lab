@@ -114,16 +114,25 @@ Set `LLM_ENABLED=false` in `backend/.env` — no API key required. All detectors
 │   │   ├── websocket_manager.py    # WebSocket broadcast
 │   │   ├── playbooks.py            # 6 attack/defense scenarios
 │   │   ├── detectors/
-│   │   │   ├── pipeline.py         # Chain-of-responsibility orchestrator
+│   │   │   ├── pipeline.py         # Chain-of-responsibility + PolicyEngine + Bayesian fusion
+│   │   │   ├── factory.py          # Pipeline factory (reads runtime settings)
 │   │   │   ├── regex_detector.py   # L1: pattern matching
-│   │   │   ├── semantic_detector.py # L2: embedding similarity (NEW)
+│   │   │   ├── semantic_detector.py # L2: embedding similarity
 │   │   │   ├── rag_detector.py     # L2 legacy (deprecated keyword matching)
 │   │   │   └── llm_detector.py     # L3: LLM intent judgment
 │   │   ├── simulation/             # Turn-based simulation engine
 │   │   ├── experiments/            # Reproducible experiment runner + 10 metrics
 │   │   ├── replay/                 # Cursor-based trace replay
-│   │   ├── benchmark/              # Automated pipeline benchmarking (NEW)
+│   │   ├── benchmark/              # Automated pipeline benchmarking
+│   │   ├── policy/                 # Policy engine (wired into runtime pipeline)
+│   │   ├── trace_graph/            # TraceGraph builder + contamination analyzer
 │   │   └── llm/                    # LLM provider abstraction
+│   ├── tests/
+│   │   ├── test_contract.py        # Core data-integrity contract tests
+│   │   ├── test_policy_engine.py   # Policy evaluation unit tests
+│   │   ├── test_trace_graph_builder.py
+│   │   ├── test_contamination_analyzer.py
+│   │   └── test_event_store_migration.py
 │   └── requirements.txt
 ├── frontend/
 │   ├── Dockerfile
@@ -160,13 +169,15 @@ Set `LLM_ENABLED=false` in `backend/.env` — no API key required. All detectors
 - **Multi-Agent Simulation Engine** — Configurable topology, injection sources, turn-based LLM-driven conversations
 - **Event Store & Trace System** — SQLite WAL persistence, trace_id-based causal chain tracking, full replay
 - **Experiment System** — Reproducible experiments with 10 automated metrics
-- **Benchmark System** — 29 built-in payloads (19 attack + 10 safe), per-level recall/FPR/latency stats
+- **Benchmark System** — 29 built-in payloads (19 attack + 10 safe), per-level recall/FPR/latency stats, persisted to SQLite
 - **Replay Engine** — Cursor-based trace step-through with play/pause/seek/speed (0.1x–16x)
 - **Visual Console** — ReactFlow topology with real-time infection ripple, edge contamination pulse, quarantine animation
 - **Monitor Status Panel** — Real-time per-level interception counts and detection reasons
-- **6 Built-in Playbooks** — From explicit jailbreak to covert RAG poisoning and cognitive deception
-- **Policy Engine** — Rule-based action decisions (allow/alert/quarantine/isolate/block) with detector override protection
+- **6 Built-in Playbooks** — EventSpec template pattern ensures each run produces a fresh trace with unique IDs
+- **Policy Engine** — Rule-based action decisions wired into the runtime detector pipeline, not just a standalone API
 - **Contamination Analysis** — Propagation depth, blast radius, time-to-detection, recovery success, persistence metrics
+- **Runtime Settings** — Settings changes (detector thresholds, LLM config) trigger live pipeline rebuild without restart
+- **Contract Tests** — 11 automated tests covering playbook isolation, block semantics, trace propagation, and pipeline integrity
 
 ## TraceGraph & Contamination Analysis
 
@@ -174,7 +185,7 @@ The platform reconstructs event streams into TraceGraph objects and computes con
 
 ## Policy Engine
 
-A rule-based policy engine sits between detection and action, evaluating events against configurable policies to determine response actions. See [docs/policy-engine.md](docs/policy-engine.md) for details.
+A rule-based policy engine sits between detection and action in the runtime pipeline, evaluating events against configurable policies to determine response actions. Policies can upgrade (but never downgrade) detector-level decisions. See [docs/policy-engine.md](docs/policy-engine.md) for details.
 
 ## API Endpoints
 

@@ -53,8 +53,14 @@ fake_rag = FakeTool("FakeTool_RAG", message_bus, tool_type="rag")
 fake_kg = FakeTool("FakeTool_KG", message_bus, tool_type="kg")
 
 # ── Pipeline: L1 blocker + L2/L3 gray-zone → honeypot router ──
-pipeline = create_default_pipeline(llm_client=llm_client, bus=message_bus)
-message_bus.attach_monitor(pipeline.inspect)
+# Created lazily via rebuild_runtime_pipeline() so settings are ready.
+
+
+def rebuild_runtime_pipeline() -> None:
+    message_bus._monitors.clear()
+    pipeline = create_default_pipeline(llm_client=llm_client, bus=message_bus)
+    message_bus.attach_monitor(pipeline.inspect)
+
 
 # WebSocket broadcast
 message_bus.attach_broadcast_hook(websocket_manager.broadcast)
