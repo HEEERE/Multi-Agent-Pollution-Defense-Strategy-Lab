@@ -1,5 +1,6 @@
 import { Shield, Zap, Brain, Eye } from "lucide-react";
 import { useT } from "../i18n/context";
+import { useDraggable } from "../hooks/useDraggable";
 import type { AgentEvent } from "../types";
 
 interface LevelStat {
@@ -39,13 +40,20 @@ function computeLevelStats(events: AgentEvent[]): LevelStat[] {
 
 export function MonitorStatusPanel({ events }: { events: AgentEvent[] }) {
   const { t } = useT();
+  const { offset, onMouseDown, dragging } = useDraggable();
   const stats = computeLevelStats(events);
   const totalThreats = events.filter((e) => e.action_taken !== "none").length;
   const totalSafe = events.filter((e) => e.action_taken === "none").length;
 
   return (
-    <div className="absolute bottom-4 right-4 z-20 w-[300px] rounded-xl border border-slate-200 bg-white/90 shadow-lg backdrop-blur">
-      <div className="flex items-center gap-2 border-b border-slate-100 px-4 py-3">
+    <div
+      className="absolute bottom-4 right-4 z-20 w-[300px] rounded-xl border border-slate-200 bg-white/90 shadow-lg backdrop-blur"
+      style={{ transform: `translate(${offset.x}px, ${offset.y}px)` }}
+    >
+      <div
+        className={`flex items-center gap-2 border-b border-slate-100 px-4 py-3 ${dragging ? "cursor-grabbing" : "cursor-grab"} select-none`}
+        onMouseDown={onMouseDown}
+      >
         <Shield size={16} className="text-emerald-600" />
         <span className="text-xs font-semibold text-slate-700">{t("monitor.title")}</span>
         <span className="ml-auto text-[10px] text-slate-400">

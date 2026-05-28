@@ -20,8 +20,12 @@ build/
 *.db
 *.db-shm
 *.db-wal
+*.db-journal
 backend/data/
 backend/app/data/chroma_db/
+
+# Frontend env (local dev overrides)
+frontend/.env
 
 # IDE
 .vscode/

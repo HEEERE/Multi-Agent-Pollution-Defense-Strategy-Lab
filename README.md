@@ -88,10 +88,14 @@ uvicorn app.main:app --reload --host 127.0.0.1 --port 8000
 ```powershell
 cd frontend
 npm install
+# For local dev, tell Vite where the backend is:
+echo VITE_API_URL=http://127.0.0.1:8000 > .env
 npm run dev
 ```
 
 Open `http://127.0.0.1:5173`.
+
+> **Docker users:** The frontend nginx proxies `/api/` and `/ws/` to the backend, so no `.env` file is needed — the app uses relative paths automatically.
 
 ### Offline Demo Mode
 
@@ -130,15 +134,24 @@ Set `LLM_ENABLED=false` in `backend/.env` — no API key required. All detectors
 │       ├── pages/
 │       │   ├── LiveMonitor.tsx      # Real-time topology + event console
 │       │   ├── ExperimentStudio.tsx # Experiment runner + metrics
-│       │   └── ReplayAnalyzer.tsx   # Step-through trace playback
+│       │   ├── ReplayAnalyzer.tsx   # Step-through trace playback
+│       │   └── SettingsPage.tsx     # Runtime configuration console
 │       ├── components/
 │       │   ├── AgentNode.tsx        # Custom ReactFlow node (animated)
 │       │   ├── EventConsole.tsx     # Real-time security console
-│       │   ├── MonitorStatusPanel.tsx # Pipeline status overlay (NEW)
+│       │   ├── MonitorStatusPanel.tsx # Pipeline status overlay (draggable)
 │       │   ├── NodeDetailPanel.tsx  # Node detail popover
-│       │   └── PlaybookPanel.tsx    # One-click attack scenarios
+│       │   ├── PlaybookPanel.tsx    # One-click attack scenarios (draggable)
+│       │   ├── SettingsSection.tsx  # Reusable settings category card
+│       │   └── Toast.tsx            # Toast notification component
+│       ├── hooks/
+│       │   └── useDraggable.ts      # Drag-to-reposition hook
+│       ├── i18n/
+│       │   ├── context.tsx          # LanguageProvider + useT hook
+│       │   ├── en.json              # English translations
+│       │   └── zh.json              # Chinese translations
 │       ├── store.ts                 # Zustand global state
-│       ├── api.ts                   # Backend API client
+│       ├── api.ts                   # Backend API client (relative paths)
 │       └── types.ts                 # TypeScript definitions
 └── .dockerignore
 ```
@@ -175,6 +188,10 @@ A rule-based policy engine sits between detection and action, evaluating events 
 | GET | `/api/traces/{id}/graph` | Get TraceGraph for a trace |
 | GET | `/api/traces/{id}/contamination` | Get contamination metrics for a trace |
 | DELETE | `/api/traces/{id}` | Delete a trace |
+| GET | `/api/settings` | Get all settings categories |
+| GET | `/api/settings/{category}` | Get settings for a category |
+| PUT | `/api/settings/{category}` | Update settings for a category |
+| POST | `/api/settings/{category}/reset` | Reset a category to defaults |
 | GET | `/api/policies` | List active policies |
 | POST | `/api/policies/evaluate` | Evaluate a policy against an event |
 | GET | `/api/playbooks` | List playbook scenarios |
@@ -189,7 +206,8 @@ A rule-based policy engine sits between detection and action, evaluating events 
 | GET | `/api/benchmark/reports` | List benchmark reports |
 | GET | `/api/benchmark/reports/{id}` | Get benchmark report |
 
-WebSocket: `ws://127.0.0.1:8000/ws/events`
+WebSocket (dev): `ws://127.0.0.1:8000/ws/events`
+WebSocket (Docker): `ws://localhost:3000/ws/events` (proxied by nginx)
 
 ## License
 

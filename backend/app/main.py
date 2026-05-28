@@ -48,7 +48,7 @@ def _get_cors_origins() -> list[str]:
     env_origins = os.environ.get("CORS_ALLOWED_ORIGINS", "")
     if env_origins:
         return [o.strip() for o in env_origins.split(",") if o.strip()]
-    return ["http://localhost:5173", "http://127.0.0.1:5173"]
+    return ["http://localhost:5173", "http://127.0.0.1:5173", "http://localhost:3000", "http://127.0.0.1:3000"]
 
 
 @asynccontextmanager
@@ -408,7 +408,7 @@ async def get_replay_state(session_id: str) -> dict:
 
 @app.post("/api/benchmark/run")
 async def run_benchmark() -> dict:
-    runner = BenchmarkRunner(llm_client=get_llm_client(), event_store=get_event_store())
+    runner = BenchmarkRunner(llm_client=get_llm_client(), event_store=await get_event_store())
     report = await runner.run()
     _benchmark_reports[report.report_id] = report
     return report.model_dump(mode="json")

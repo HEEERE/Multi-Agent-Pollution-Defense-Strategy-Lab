@@ -1,5 +1,6 @@
 import { Play, RotateCcw } from "lucide-react";
 import { useT } from "../i18n/context";
+import { useDraggable } from "../hooks/useDraggable";
 import type { PlaybookSummary } from "../types";
 
 interface PlaybookPanelProps {
@@ -11,9 +12,16 @@ interface PlaybookPanelProps {
 
 export function PlaybookPanel({ playbooks, activeId, onRun, onReset }: PlaybookPanelProps) {
   const { t } = useT();
+  const { offset, onMouseDown, dragging } = useDraggable();
   return (
-    <div className="absolute left-5 top-5 z-10 w-[330px] rounded-lg border border-slate-200 bg-white p-3 shadow-signal">
-      <div className="mb-3 flex items-center justify-between">
+    <div
+      className="absolute left-5 top-5 z-10 w-[330px] rounded-lg border border-slate-200 bg-white p-3 shadow-signal"
+      style={{ transform: `translate(${offset.x}px, ${offset.y}px)` }}
+    >
+      <div
+        className={`mb-3 flex items-center justify-between ${dragging ? "cursor-grabbing" : "cursor-grab"} select-none`}
+        onMouseDown={onMouseDown}
+      >
         <div>
           <div className="text-sm font-semibold text-slate-950">{t("playbook.title")}</div>
           <div className="text-xs text-slate-500">{t("playbook.subtitle")}</div>

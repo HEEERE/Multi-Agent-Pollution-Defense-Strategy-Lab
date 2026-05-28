@@ -17,13 +17,15 @@ import { EventConsole } from "../components/EventConsole";
 import { MonitorStatusPanel } from "../components/MonitorStatusPanel";
 import { NodeDetailPanel } from "../components/NodeDetailPanel";
 import { PlaybookPanel } from "../components/PlaybookPanel";
+import { api } from "../api";
 import { initialEdges, initialNodes, statusPalette } from "../graph";
 import { useStore } from "../store";
 import { useT } from "../i18n/context";
 import type { AgentEvent, NodeData } from "../types";
 
-const WS_URL = import.meta.env.VITE_WS_URL ?? "ws://127.0.0.1:8000/ws/events";
-const API_URL = import.meta.env.VITE_API_URL ?? "http://127.0.0.1:8000";
+const WS_URL =
+  import.meta.env.VITE_WS_URL ??
+  `${window.location.protocol === "https:" ? "wss" : "ws"}://${window.location.host}/ws/events`;
 
 export function LiveMonitor() {
   const { t } = useT();
@@ -69,10 +71,7 @@ export function LiveMonitor() {
   }, [applyEvent, setConnected]);
 
   useEffect(() => {
-    fetch(`${API_URL}/api/playbooks`)
-      .then((r) => r.json())
-      .then((items) => setPlaybooks(items))
-      .catch(() => {});
+    api.getPlaybooks().then(setPlaybooks).catch(() => {});
   }, [setPlaybooks]);
 
   const onNodesChange = useCallback(
@@ -89,7 +88,7 @@ export function LiveMonitor() {
   );
 
   return (
-    <main className="grid h-screen min-h-[720px] grid-cols-[minmax(0,1fr)_390px] bg-slate-100 text-slate-950">
+    <main className="grid min-h-0 flex-1 grid-cols-[minmax(0,1fr)_390px] bg-slate-100 text-slate-950">
       <section className="flex min-w-0 flex-col">
         <header className="flex h-16 shrink-0 items-center justify-between border-b border-slate-200 bg-white px-6">
           <div>

@@ -77,7 +77,8 @@ export function SettingsPage() {
   }
 
   return (
-    <div className="mx-auto max-w-3xl p-6">
+    <div className="h-full overflow-y-auto">
+      <div className="mx-auto max-w-3xl p-6">
       <Toast toast={toast} onDismiss={() => setToast(null)} />
       <div className="mb-6">
         <h1 className="text-lg font-semibold text-slate-800">{t("settings.title")}</h1>
@@ -110,6 +111,7 @@ export function SettingsPage() {
           onReset={() => handleReset("system")}
         />
       </div>
+    </div>
     </div>
   );
 }
