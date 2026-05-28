@@ -135,6 +135,12 @@ class SettingsManager:
     async def get_all(self) -> dict[str, dict[str, object]]:
         return {cat: dict(kv) for cat, kv in self._cache.items()}
 
+    async def get_last_updated(self) -> float | None:
+        conn = await self._get_conn()
+        cursor = await conn.execute("SELECT MAX(updated_at) FROM settings")
+        row = await cursor.fetchone()
+        return row[0] if row and row[0] else None
+
     async def get_category(self, category: str) -> dict[str, object]:
         if category not in VALID_CATEGORIES:
             raise ValueError(f"Unknown settings category: {category}")

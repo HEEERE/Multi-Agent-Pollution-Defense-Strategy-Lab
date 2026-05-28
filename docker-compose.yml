@@ -1,19 +1,20 @@
-version: "3.8"
+name: multi-agent-pollution-defense
 
 services:
   backend:
     build: ./backend
+    pull_policy: if_not_present
     ports:
       - "8000:8000"
     volumes:
       - ./backend/data:/app/data
-      - ./backend/.env:/app/.env:ro
     environment:
       - LLM_ENABLED=false
     restart: unless-stopped
 
   frontend:
     build: ./frontend
+    pull_policy: if_not_present
     ports:
       - "3000:80"
     depends_on:

@@ -108,7 +108,7 @@ export const useStore = create<AppState>((set) => ({
   runPlaybook: async (id) => {
     set({ activePlaybookId: id });
     try {
-      await fetch(`${import.meta.env.VITE_API_URL ?? "http://127.0.0.1:8000"}/api/playbooks/${id}/run`, { method: "POST" });
+      await api.runPlaybook(id);
     } finally {
       set({ activePlaybookId: null });
     }
@@ -148,7 +148,8 @@ export const useStore = create<AppState>((set) => ({
       await api.updateSettingsCategory(category, values);
       set((state) => {
         if (!state.settings) return { settingsSaveStatus: "saved" };
-        const categories = { ...state.settings.categories, [category]: { ...state.settings.categories[category], ...values } };
+        const currentCategory = state.settings.categories[category] ?? {};
+        const categories = { ...state.settings.categories, [category]: { ...currentCategory, ...values } };
         return { settings: { ...state.settings, categories }, settingsSaveStatus: "saved" };
       });
       return true;

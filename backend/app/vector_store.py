@@ -72,7 +72,7 @@ class ChromaVectorStore:
         collection_name: str = "attack_samples",
     ) -> None:
         if persist_dir is None:
-            persist_dir = os.path.join(os.path.dirname(__file__), "data", "chroma_db")
+            persist_dir = os.path.join(os.path.dirname(__file__), "..", "data", "chroma_db")
         self._persist_dir = persist_dir
         self._collection_name = collection_name
         self._client = None

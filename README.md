@@ -88,14 +88,12 @@ uvicorn app.main:app --reload --host 127.0.0.1 --port 8000
 ```powershell
 cd frontend
 npm install
-# For local dev, tell Vite where the backend is:
-echo VITE_API_URL=http://127.0.0.1:8000 > .env
 npm run dev
 ```
 
-Open `http://127.0.0.1:5173`.
+Open `http://127.0.0.1:5173`. The Vite dev server proxies `/api` to `http://127.0.0.1:8000` and `/ws` to the backend WebSocket automatically — no `.env` file needed for local development.
 
-> **Docker users:** The frontend nginx proxies `/api/` and `/ws/` to the backend, so no `.env` file is needed — the app uses relative paths automatically.
+> **Docker users:** The frontend nginx proxies `/api/` and `/ws/` to the backend, so the app uses relative paths automatically.
 
 ### Offline Demo Mode
 

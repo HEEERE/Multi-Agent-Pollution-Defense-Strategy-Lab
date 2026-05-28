@@ -1,4 +1,4 @@
-from fastapi import WebSocket
+from fastapi import WebSocket, WebSocketDisconnect
 
 from app.schemas import AgentEvent
 
@@ -15,7 +15,10 @@ class WebSocketManager:
         self.active_connections.discard(websocket)
 
     async def send_personal_message(self, websocket: WebSocket, event: AgentEvent) -> None:
-        await websocket.send_json(event.model_dump(mode="json"))
+        try:
+            await websocket.send_json(event.model_dump(mode="json"))
+        except (RuntimeError, WebSocketDisconnect):
+            self.disconnect(websocket)
 
     async def broadcast(self, event: AgentEvent) -> None:
         stale_connections: list[WebSocket] = []
@@ -23,7 +26,7 @@ class WebSocketManager:
         for connection in self.active_connections:
             try:
                 await connection.send_json(event.model_dump(mode="json"))
-            except RuntimeError:
+            except (RuntimeError, WebSocketDisconnect):
                 stale_connections.append(connection)
 
         for connection in stale_connections:

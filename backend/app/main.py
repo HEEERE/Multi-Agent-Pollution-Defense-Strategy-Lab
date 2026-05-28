@@ -1,6 +1,6 @@
 from contextlib import asynccontextmanager
 
-from fastapi import FastAPI, WebSocket, WebSocketDisconnect
+from fastapi import FastAPI, HTTPException, WebSocket, WebSocketDisconnect, Body
 from fastapi.middleware.cors import CORSMiddleware
 
 from app.core.config import get_settings
@@ -10,7 +10,7 @@ from app.demo_topology import (
     run_agent_to_tool,
     run_gateway_to_agent,
 )
-from app.settings_manager import VALID_CATEGORIES, get_settings_manager
+from app.settings_manager import VALID_CATEGORIES, get_settings_manager, init_settings_manager
 from app.event_store import get_event_store
 from app.event_store import EventStore
 from app.experiments.runner import ExperimentRunner
@@ -53,6 +53,7 @@ def _get_cors_origins() -> list[str]:
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
+    await init_settings_manager()
     await init_event_store()
     yield
 
@@ -99,13 +100,14 @@ async def platform_config() -> dict[str, str | bool]:
 async def get_all_settings() -> dict[str, object]:
     mgr = get_settings_manager()
     categories = await mgr.get_all()
-    return {"categories": categories, "updated_at": None}
+    updated_at = await mgr.get_last_updated()
+    return {"categories": categories, "updated_at": updated_at}
 
 
 @app.get("/api/settings/{category}")
 async def get_settings_category(category: str) -> dict[str, object]:
     if category not in VALID_CATEGORIES:
-        return {"error": f"Unknown category: {category}"}
+        raise HTTPException(status_code=404, detail=f"Unknown category: {category}")
     mgr = get_settings_manager()
     values = await mgr.get_category(category)
     return {"category": category, "values": values}
@@ -114,7 +116,7 @@ async def get_settings_category(category: str) -> dict[str, object]:
 @app.put("/api/settings/{category}")
 async def update_settings_category(category: str, payload: dict[str, object]) -> dict[str, object]:
     if category not in VALID_CATEGORIES:
-        return {"error": f"Unknown category: {category}"}
+        raise HTTPException(status_code=404, detail=f"Unknown category: {category}")
     mgr = get_settings_manager()
     updated = await mgr.update_category(category, payload)
     return {"status": "saved", "category": category, "updated": updated}
@@ -123,7 +125,7 @@ async def update_settings_category(category: str, payload: dict[str, object]) ->
 @app.post("/api/settings/{category}/reset")
 async def reset_settings_category(category: str) -> dict[str, object]:
     if category not in VALID_CATEGORIES:
-        return {"error": f"Unknown category: {category}"}
+        raise HTTPException(status_code=404, detail=f"Unknown category: {category}")
     mgr = get_settings_manager()
     values = await mgr.reset_category(category)
     return {"category": category, "values": values}
@@ -201,7 +203,7 @@ async def get_trace_summary(trace_id: str) -> dict:
     store = await get_event_store()
     summary = await store.get_trace_summary(trace_id)
     if summary is None:
-        return {"error": "trace not found", "trace_id": trace_id}
+        raise HTTPException(status_code=404, detail="trace not found")
     return summary.model_dump()
 
 
@@ -253,14 +255,14 @@ async def evaluate_policy(event: AgentEvent) -> dict:
 
 @app.post("/api/tasks/demo", response_model=AgentEvent | None)
 async def submit_demo_task(
-    payload: str = "Summarize the customer support context.",
+    payload: str = Body("Summarize the customer support context.", embed=True),
 ) -> AgentEvent | None:
     return await run_gateway_to_agent(payload)
 
 
 @app.post("/api/tasks/tool-demo", response_model=AgentEvent | None)
 async def submit_tool_demo(
-    payload: str = "Search the shared incident notes.",
+    payload: str = Body("Search the shared incident notes.", embed=True),
 ) -> AgentEvent | None:
     return await run_agent_to_tool(payload)
 
@@ -275,7 +277,7 @@ async def get_playbooks() -> list[dict[str, str]]:
 @app.post("/api/playbooks/{playbook_id}/run", response_model=list[AgentEvent])
 async def run_named_playbook(playbook_id: str, delay_seconds: float = 0.85) -> list[AgentEvent]:
     if playbook_id not in PLAYBOOKS:
-        return []
+        raise HTTPException(status_code=404, detail=f"Unknown playbook: {playbook_id}")
     return await run_playbook(playbook_id, delay_seconds)
 
 
@@ -314,7 +316,7 @@ async def get_experiment_metrics(experiment_id: str) -> dict:
     store = await get_event_store()
     exp = await store.get_experiment(experiment_id)
     if exp is None or not exp.get("metrics_json"):
-        return {"error": "metrics not available"}
+        raise HTTPException(status_code=404, detail="metrics not available")
     import json
     return json.loads(exp["metrics_json"])
 
@@ -331,28 +333,23 @@ async def delete_experiment(experiment_id: str) -> dict:
 _replay_sessions: dict[str, ReplayEngine] = {}
 
 
-@app.post("/api/replay/{trace_id}/start")
-async def start_replay(trace_id: str) -> dict:
+@app.post("/api/replay/{trace_id}/start", response_model=ReplaySession)
+async def start_replay(trace_id: str) -> ReplaySession:
     store = await get_event_store()
     events = await store.get_events_by_trace(trace_id)
     if not events:
-        return {"error": "trace not found"}
-    session_id = f"replay_{trace_id}"
+        raise HTTPException(status_code=404, detail="trace not found")
     engine = ReplayEngine(events)
-    _replay_sessions[session_id] = engine
+    _replay_sessions[engine.session_id] = engine
     engine.play()
-    return {
-        "session_id": session_id,
-        "total_events": len(events),
-        "state": "playing",
-    }
+    return engine.get_state()
 
 
 @app.post("/api/replay/{session_id}/pause")
 async def pause_replay(session_id: str) -> dict:
     engine = _replay_sessions.get(session_id)
     if engine is None:
-        return {"error": "session not found"}
+        raise HTTPException(status_code=404, detail="session not found")
     engine.pause()
     return engine.get_state().model_dump()
 
@@ -361,7 +358,7 @@ async def pause_replay(session_id: str) -> dict:
 async def resume_replay(session_id: str) -> dict:
     engine = _replay_sessions.get(session_id)
     if engine is None:
-        return {"error": "session not found"}
+        raise HTTPException(status_code=404, detail="session not found")
     engine.play()
     return engine.get_state().model_dump()
 
@@ -370,7 +367,7 @@ async def resume_replay(session_id: str) -> dict:
 async def step_replay(session_id: str) -> dict:
     engine = _replay_sessions.get(session_id)
     if engine is None:
-        return {"error": "session not found"}
+        raise HTTPException(status_code=404, detail="session not found")
     event = engine.step_forward()
     state = engine.get_state()
     result = state.model_dump()
@@ -382,7 +379,7 @@ async def step_replay(session_id: str) -> dict:
 async def seek_replay(session_id: str, position: int = 0) -> dict:
     engine = _replay_sessions.get(session_id)
     if engine is None:
-        return {"error": "session not found"}
+        raise HTTPException(status_code=404, detail="session not found")
     engine.seek(position)
     return engine.get_state().model_dump()
 
@@ -391,7 +388,7 @@ async def seek_replay(session_id: str, position: int = 0) -> dict:
 async def speed_replay(session_id: str, multiplier: float = 1.0) -> dict:
     engine = _replay_sessions.get(session_id)
     if engine is None:
-        return {"error": "session not found"}
+        raise HTTPException(status_code=404, detail="session not found")
     engine.set_speed(multiplier)
     return engine.get_state().model_dump()
 
@@ -400,7 +397,7 @@ async def speed_replay(session_id: str, multiplier: float = 1.0) -> dict:
 async def get_replay_state(session_id: str) -> dict:
     engine = _replay_sessions.get(session_id)
     if engine is None:
-        return {"error": "session not found"}
+        raise HTTPException(status_code=404, detail="session not found")
     return engine.get_state().model_dump()
 
 

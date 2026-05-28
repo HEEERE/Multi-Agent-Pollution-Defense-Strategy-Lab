@@ -26,6 +26,8 @@ backend/app/data/chroma_db/
 
 # Frontend env (local dev overrides)
 frontend/.env
+frontend/.env.local
+frontend/.env.*.local
 
 # IDE
 .vscode/
