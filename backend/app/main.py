@@ -138,7 +138,7 @@ async def sample_event() -> AgentEvent:
     return AgentEvent(
         event_type=EventType.COMMUNICATION,
         source_node="Gateway",
-        target_node="Agent_A",
+        target_node="Task_Agent_A",
         payload_snippet="Initial benign task routed through the central gateway.",
         status=EventStatus.SAFE,
         action_taken="none",

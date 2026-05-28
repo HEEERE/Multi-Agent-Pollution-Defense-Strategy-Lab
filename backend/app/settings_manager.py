@@ -57,7 +57,6 @@ FACTORY_DEFAULTS: dict[str, dict[str, object]] = {
         "honeypot.default_node": "Honeypot_Agent",
     },
     "system": {
-        "system.cors_allowed_origins": "http://localhost:5173,http://127.0.0.1:5173",
         "system.event_retention_limit": 10000,
         "system.ws_ping_interval": 30,
     },

@@ -72,7 +72,7 @@ class BaseAgent:
                     parent_event_id=parent_id,
                     event_type=EventType.COMMUNICATION,
                     source_node=self.node_id,
-                    target_node="Monitor_Node",
+                    target_node="Auditor_Prime",
                     payload_snippet=response[:500],
                     status=event.status,
                     action_taken=event.action_taken,
