@@ -110,6 +110,8 @@ Set `LLM_ENABLED=false` in `backend/.env` — no API key required. All detectors
 │   │   ├── schemas.py              # Pydantic models & enums
 │   │   ├── message_bus.py          # Central async event routing
 │   │   ├── event_store.py          # SQLite persistence (WAL)
+│   │   ├── pipeline_manager.py     # Pipeline lifecycle (rebuilds on settings change)
+│   │   ├── settings_manager.py     # Runtime settings persistence (SQLite)
 │   │   ├── vector_store.py         # ChromaDB vector store (L2 semantic)
 │   │   ├── websocket_manager.py    # WebSocket broadcast
 │   │   ├── playbooks.py            # 6 attack/defense scenarios
@@ -127,6 +129,10 @@ Set `LLM_ENABLED=false` in `backend/.env` — no API key required. All detectors
 │   │   ├── policy/                 # Policy engine (wired into runtime pipeline)
 │   │   ├── trace_graph/            # TraceGraph builder + contamination analyzer
 │   │   └── llm/                    # LLM provider abstraction
+│   │       ├── client_manager.py   # LLM client lifecycle (reads runtime settings)
+│   │       ├── factory.py          # Client factory
+│   │       ├── mimo_client.py      # MiMo API client
+│   │       └── base.py             # LLMClient protocol
 │   ├── tests/
 │   │   ├── test_contract.py        # Core data-integrity contract tests
 │   │   ├── test_policy_engine.py   # Policy evaluation unit tests
@@ -167,7 +173,7 @@ Set `LLM_ENABLED=false` in `backend/.env` — no API key required. All detectors
 
 - **3-Level Monitor Pipeline** — L1 Regex (BLOCK) → L2 Semantic/Embedding (QUARANTINE) → L3 LLM Intent (QUARANTINE), with fail-fast short-circuit
 - **Multi-Agent Simulation Engine** — Configurable topology, injection sources, turn-based LLM-driven conversations
-- **Event Store & Trace System** — SQLite WAL persistence, trace_id-based causal chain tracking, full replay
+- **Event Store & Trace System** — SQLite WAL persistence with full AgentEvent JSON serialization (all v2 fields preserved on round-trip), trace_id-based causal chain tracking, full replay
 - **Experiment System** — Reproducible experiments with 10 automated metrics
 - **Benchmark System** — 29 built-in payloads (19 attack + 10 safe), per-level recall/FPR/latency stats, persisted to SQLite
 - **Replay Engine** — Cursor-based trace step-through with play/pause/seek/speed (0.1x–16x)
@@ -176,7 +182,7 @@ Set `LLM_ENABLED=false` in `backend/.env` — no API key required. All detectors
 - **6 Built-in Playbooks** — EventSpec template pattern ensures each run produces a fresh trace with unique IDs
 - **Policy Engine** — Rule-based action decisions wired into runtime pipeline; actively enforces block/isolate/quarantine by updating `action_taken` and `status` on events, not just audit
 - **Contamination Analysis** — Propagation depth, blast radius, time-to-detection, recovery success, persistence metrics
-- **Runtime Settings** — Per-detector enable/disable (regex, semantic, llm_intent), threshold tuning, and LLM config changes trigger live pipeline rebuild without restart; reset restores factory defaults and rebuilds pipeline
+- **Runtime Settings** — Per-detector enable/disable (regex, semantic, llm_intent), threshold tuning, and LLM config changes trigger live pipeline rebuild with fresh LLM client (no restart required); reset restores factory defaults and rebuilds pipeline. Settings are gated: only detector/LLM changes trigger rebuild; agent/system changes are stored without unnecessary pipeline churn.
 - **Contract Tests** — 11 automated tests covering playbook isolation, block semantics, trace propagation, and pipeline integrity
 
 ## TraceGraph & Contamination Analysis
@@ -214,6 +220,8 @@ A rule-based policy engine sits between detection and action in the runtime pipe
 | POST | `/api/benchmark/run` | Run benchmark (29 payloads) |
 | GET | `/api/benchmark/reports` | List benchmark reports |
 | GET | `/api/benchmark/reports/{id}` | Get benchmark report |
+| GET | `/api/honeypot/intel` | Get honeypot threat intelligence |
+| POST | `/api/honeypot/intel/feed-vector` | Feed novel honeypot payloads to vector store |
 
 WebSocket (dev): `ws://127.0.0.1:8000/ws/events`
 WebSocket (Docker): `ws://localhost:3000/ws/events` (proxied by nginx)

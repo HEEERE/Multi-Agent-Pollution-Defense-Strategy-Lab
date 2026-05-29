@@ -69,6 +69,7 @@ MIGRATION_COLUMNS: list[tuple[str, str]] = [
     ("policy_id", "policy_id TEXT"),
     ("edge_kind", "edge_kind TEXT"),
     ("artifact_refs", "artifact_refs TEXT NOT NULL DEFAULT '[]'"),
+    ("event_json", "event_json TEXT"),
 ]
 
 
@@ -113,10 +114,13 @@ def _event_to_row(event: AgentEvent) -> dict:
         "policy_id": event.policy_id,
         "edge_kind": event.edge_kind,
         "artifact_refs": json.dumps(event.artifact_refs, ensure_ascii=False),
+        "event_json": event.model_dump_json(exclude_none=True),
     }
 
 
 def _row_to_event(row: aiosqlite.Row) -> AgentEvent:
+    if "event_json" in row.keys() and row["event_json"]:
+        return AgentEvent.model_validate_json(row["event_json"])
     return AgentEvent(
         event_id=row["event_id"],
         trace_id=row["trace_id"],

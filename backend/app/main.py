@@ -118,7 +118,11 @@ async def update_settings_category(category: str, payload: dict[str, object]) ->
         raise HTTPException(status_code=404, detail=f"Unknown category: {category}")
     mgr = get_settings_manager()
     updated = await mgr.update_category(category, payload)
-    rebuild_runtime_pipeline()
+    if category == "llm":
+        from app.llm.factory import get_llm_client_manager
+        get_llm_client_manager().invalidate()
+    if category in ("detectors", "llm"):
+        rebuild_runtime_pipeline()
     return {"status": "saved", "category": category, "updated": updated}
 
 
@@ -128,7 +132,10 @@ async def reset_settings_category(category: str) -> dict[str, object]:
         raise HTTPException(status_code=404, detail=f"Unknown category: {category}")
     mgr = get_settings_manager()
     values = await mgr.reset_category(category)
-    if category in {"detectors", "llm"}:
+    if category == "llm":
+        from app.llm.factory import get_llm_client_manager
+        get_llm_client_manager().invalidate()
+    if category in ("detectors", "llm"):
         rebuild_runtime_pipeline()
     return {"category": category, "values": values}
 

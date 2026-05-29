@@ -2,7 +2,6 @@ from app.agents.base import BaseAgent
 from app.agents.auditor import AuditorAgent
 from app.agents.honeypot import HoneypotAgent
 from app.agents.red_team import RedTeamAgent
-from app.detectors.factory import create_default_pipeline
 from app.event_store import EventStore
 from app.gateway.base import BaseGateway
 from app.llm.factory import get_llm_client
@@ -57,8 +56,8 @@ fake_kg = FakeTool("FakeTool_KG", message_bus, tool_type="kg")
 
 
 def rebuild_runtime_pipeline() -> None:
-    pipeline = create_default_pipeline(llm_client=llm_client, bus=message_bus)
-    message_bus.replace_monitors([pipeline.inspect])
+    from app.pipeline_manager import get_pipeline_manager
+    get_pipeline_manager().rebuild()
 
 
 # WebSocket broadcast

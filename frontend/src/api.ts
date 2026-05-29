@@ -72,4 +72,13 @@ export const api = {
   // Policies (v2)
   getPolicies: () => request<import("./types").PolicyRule[]>("/api/policies"),
   evaluatePolicy: (event: import("./types").AgentEvent) => request<import("./types").PolicyDecision>("/api/policies/evaluate", { method: "POST", body: JSON.stringify(event) }),
+
+  // Benchmark
+  runBenchmark: () => request<import("./types").BenchmarkReport>("/api/benchmark/run", { method: "POST" }),
+  getBenchmarkReports: () => request<import("./types").BenchmarkReport[]>("/api/benchmark/reports"),
+  getBenchmarkReport: (id: string) => request<import("./types").BenchmarkReport | null>(`/api/benchmark/reports/${id}`),
+
+  // Honeypot
+  getHoneypotIntel: () => request<import("./types").ThreatIntelReport>("/api/honeypot/intel"),
+  feedHoneypotToVector: () => request<{ novel_payloads_fed: number; session_id: string }>("/api/honeypot/intel/feed-vector", { method: "POST" }),
 };

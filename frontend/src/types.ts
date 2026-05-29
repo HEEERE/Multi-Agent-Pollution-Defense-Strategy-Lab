@@ -21,6 +21,14 @@ export interface AgentEvent {
   severity: EventSeverity;
   monitor_level: MonitorLevel;
   metadata: Record<string, unknown>;
+  event_category: string | null;
+  risk_tags: string[];
+  trust_level: string;
+  contamination_score: number;
+  policy_decision: string | null;
+  policy_id: string | null;
+  edge_kind: string | null;
+  artifact_refs: string[];
 }
 
 // ── Node / Playbook types (existing) ─────────────────────────
@@ -236,4 +244,52 @@ export interface PolicyDecision {
   action: string;
   severity: string;
   reason: string;
-  matched: boolean;}
+  matched: boolean;
+}
+
+// ── Benchmark ─────────────────────────────────────────────────
+
+export interface LevelStats {
+  level: MonitorLevel;
+  total_tested: number;
+  threats_detected: number;
+  false_positives: number;
+  true_negatives: number;
+  recall: number;
+  fpr: number;
+  avg_latency_ms: number;
+  p95_latency_ms: number;
+}
+
+export interface BenchmarkReport {
+  report_id: string;
+  timestamp: number;
+  pipeline_config: Record<string, unknown>;
+  total_payloads: number;
+  ground_truth_threats: number;
+  per_level: LevelStats[];
+  overall_recall: number;
+  overall_fpr: number;
+}
+
+// ── Honeypot ──────────────────────────────────────────────────
+
+export interface HoneyPotRecord {
+  turn: number;
+  attacker_input: string;
+  agent_response: string;
+  tool_calls: string[];
+  detected_technique: string;
+  timestamp: number;
+}
+
+export interface ThreatIntelReport {
+  report_id: string;
+  honeypot_session_id: string;
+  captured_at: number;
+  attack_chain: HoneyPotRecord[];
+  extracted_techniques: string[];
+  novel_payloads: string[];
+  total_turns: number;
+  recommended_action: string;
+}

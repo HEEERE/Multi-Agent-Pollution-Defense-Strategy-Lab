@@ -1,9 +1,15 @@
-from functools import lru_cache
-
-from app.core.config import get_settings
+from app.llm.client_manager import LLMClientManager
 from app.llm.mimo_client import MiMoClient
 
+_llm_client_manager: LLMClientManager | None = None
 
-@lru_cache
+
+def get_llm_client_manager() -> LLMClientManager:
+    global _llm_client_manager
+    if _llm_client_manager is None:
+        _llm_client_manager = LLMClientManager()
+    return _llm_client_manager
+
+
 def get_llm_client() -> MiMoClient:
-    return MiMoClient(get_settings())
+    return get_llm_client_manager().get_client()
