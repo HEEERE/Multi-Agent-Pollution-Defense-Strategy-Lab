@@ -32,6 +32,7 @@ class EventStatus(StrEnum):
     HONEYPOTTED = "honeypotted"
     INFECTED = "infected"
     QUARANTINED = "quarantined"
+    ISOLATED = "isolated"
     RECOVERED = "recovered"
 
 

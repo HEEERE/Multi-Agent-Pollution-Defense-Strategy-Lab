@@ -74,6 +74,7 @@ def create_default_pipeline(
 
     l1_enabled = mgr.get_value_sync("detectors", "regex.enabled", True)
     l1_action = mgr.get_value_sync("detectors", "regex.action_policy", "block")
+    l2_enabled = mgr.get_value_sync("detectors", "semantic.enabled", True)
     l2_threshold = mgr.get_value_sync("detectors", "semantic.threshold", 0.65)
     l2_top_k = mgr.get_value_sync("detectors", "semantic.top_k", 5)
     l2_action = mgr.get_value_sync("detectors", "semantic.action_policy", "quarantine")
@@ -95,6 +96,7 @@ def create_default_pipeline(
             DetectorConfig(
                 detector_id="semantic",
                 detector_type=DetectorType.SEMANTIC,
+                enabled=bool(l2_enabled),
                 level=MonitorLevel.FEATURE,
                 action_policy=ActionPolicy(str(l2_action)),
                 params={"threshold": float(l2_threshold), "top_k": int(l2_top_k)},

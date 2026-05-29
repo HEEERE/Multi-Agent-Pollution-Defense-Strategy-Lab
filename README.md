@@ -174,9 +174,9 @@ Set `LLM_ENABLED=false` in `backend/.env` — no API key required. All detectors
 - **Visual Console** — ReactFlow topology with real-time infection ripple, edge contamination pulse, quarantine animation
 - **Monitor Status Panel** — Real-time per-level interception counts and detection reasons
 - **6 Built-in Playbooks** — EventSpec template pattern ensures each run produces a fresh trace with unique IDs
-- **Policy Engine** — Rule-based action decisions wired into the runtime detector pipeline, not just a standalone API
+- **Policy Engine** — Rule-based action decisions wired into runtime pipeline; actively enforces block/isolate/quarantine by updating `action_taken` and `status` on events, not just audit
 - **Contamination Analysis** — Propagation depth, blast radius, time-to-detection, recovery success, persistence metrics
-- **Runtime Settings** — Settings changes (detector thresholds, LLM config) trigger live pipeline rebuild without restart
+- **Runtime Settings** — Per-detector enable/disable (regex, semantic, llm_intent), threshold tuning, and LLM config changes trigger live pipeline rebuild without restart; reset restores factory defaults and rebuilds pipeline
 - **Contract Tests** — 11 automated tests covering playbook isolation, block semantics, trace propagation, and pipeline integrity
 
 ## TraceGraph & Contamination Analysis

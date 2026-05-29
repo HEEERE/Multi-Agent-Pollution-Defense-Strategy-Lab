@@ -17,6 +17,7 @@ FACTORY_DEFAULTS: dict[str, dict[str, object]] = {
     "detectors": {
         "regex.enabled": True,
         "regex.action_policy": "block",
+        "semantic.enabled": True,
         "semantic.threshold": 0.65,
         "semantic.top_k": 5,
         "semantic.min_matches": 1,

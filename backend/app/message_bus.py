@@ -62,6 +62,9 @@ class MessageBus:
     def attach_monitor(self, hook: MonitorHook) -> None:
         self._monitors.append(hook)
 
+    def replace_monitors(self, monitors: list[MonitorHook]) -> None:
+        self._monitors = list(monitors)
+
     def attach_broadcast_hook(self, hook: BroadcastHook) -> None:
         self._broadcast_hooks.append(hook)
 

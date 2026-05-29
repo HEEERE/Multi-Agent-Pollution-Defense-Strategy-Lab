@@ -96,6 +96,7 @@ class DetectorPipeline:
                     "status": new_status,
                     "action_taken": action,
                     "severity": EventSeverity.CRITICAL,
+                    "trust_level": "untrusted",
                     "monitor_level": det.level,
                     "metadata": {
                         **final_event.metadata,
@@ -159,17 +160,43 @@ class DetectorPipeline:
                         f"Bayesian fusion alert: compound confidence {fused:.3f}")
 
         if self._policy_engine is not None:
+            final_event.metadata.setdefault("target_node_type", self._infer_policy_node_type(event.target_node))
+            final_event.metadata.setdefault("source_node_type", self._infer_policy_node_type(event.source_node))
             decision = self._policy_engine.evaluate(final_event)
-            final_event = final_event.model_copy(update={
+            updates: dict = {
                 "policy_decision": decision.action,
                 "policy_id": decision.policy_id,
                 "metadata": {
                     **final_event.metadata,
                     "policy": decision.model_dump(),
                 },
-            })
+            }
+            if decision.action in {"block", "deny"}:
+                updates["action_taken"] = ActionTaken.BLOCK
+                updates["status"] = EventStatus.QUARANTINED
+            elif decision.action == "isolate":
+                updates["action_taken"] = ActionTaken.ISOLATE
+                updates["status"] = EventStatus.ISOLATED
+            elif decision.action == "quarantine":
+                updates["action_taken"] = ActionTaken.QUARANTINE
+                updates["status"] = EventStatus.QUARANTINED
+            final_event = final_event.model_copy(update=updates)
 
         return final_event
+
+    @staticmethod
+    def _infer_policy_node_type(node_id: str) -> str:
+        if "KnowledgeGraph" in node_id or "Memory" in node_id:
+            return "memory"
+        if "RAG" in node_id or node_id.startswith("Tool_"):
+            return "tool"
+        if "Agent" in node_id:
+            return "agent"
+        if "Auditor" in node_id:
+            return "monitor"
+        if "Gateway" in node_id:
+            return "gateway"
+        return "unknown"
 
     @staticmethod
     def _fuse_confidences(confidences: list[float]) -> float:

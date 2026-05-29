@@ -10,6 +10,7 @@ STATUS_SCORE: dict[str, float] = {
     "honeypotted": 0.2,
     "infected": 0.8,
     "quarantined": 0.65,
+    "isolated": 0.9,
     "recovered": 0.1,
 }
 

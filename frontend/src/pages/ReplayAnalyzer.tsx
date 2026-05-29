@@ -40,25 +40,27 @@ export function ReplayAnalyzer() {
     try {
       const result = await api.stepReplay(session.session_id);
       if (result.event) setCurrentEvent(result.event as unknown as AgentEvent);
-      setSession((prev) => prev ? { ...prev, current_index: result.current_index as number, state: result.state as ReplaySession["state"] } : null);
+      setSession(result as unknown as ReplaySession);
     } catch { /* ignore */ }
   }, [session]);
 
   const seekTo = useCallback(async (index: number) => {
     if (!session) return;
     try {
-      await api.seekReplay(session.session_id, index);
-      setSession((prev) => prev ? { ...prev, current_index: index } : null);
+      const updated = await api.seekReplay(session.session_id, index);
+      setSession(updated as unknown as ReplaySession);
+      setCurrentEvent(events[index] ?? null);
     } catch { /* ignore */ }
-  }, [session]);
+  }, [session, events]);
 
   const playPause = useCallback(async () => {
     if (!session) return;
     const isPlaying = session.state === "playing";
     try {
-      if (isPlaying) await api.pauseReplay(session.session_id);
-      else await api.resumeReplay(session.session_id);
-      setSession((prev) => prev ? { ...prev, state: isPlaying ? "paused" : "playing" } : null);
+      const updated = isPlaying
+        ? await api.pauseReplay(session.session_id)
+        : await api.resumeReplay(session.session_id);
+      setSession(updated as unknown as ReplaySession);
     } catch { /* ignore */ }
   }, [session]);
 
@@ -113,10 +115,13 @@ export function ReplayAnalyzer() {
               <select
                 className="rounded border px-2 py-1 text-xs"
                 value={speed}
-                onChange={(e) => {
+                onChange={async (e) => {
                   const v = Number(e.target.value);
                   setSpeed(v);
-                  if (session) api.speedReplay(session.session_id, v);
+                  if (session) {
+                    const updated = await api.speedReplay(session.session_id, v);
+                    setSession(updated as unknown as ReplaySession);
+                  }
                 }}
               >
                 {[0.5, 1, 2, 4, 8].map((s) => (

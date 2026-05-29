@@ -57,9 +57,8 @@ fake_kg = FakeTool("FakeTool_KG", message_bus, tool_type="kg")
 
 
 def rebuild_runtime_pipeline() -> None:
-    message_bus._monitors.clear()
     pipeline = create_default_pipeline(llm_client=llm_client, bus=message_bus)
-    message_bus.attach_monitor(pipeline.inspect)
+    message_bus.replace_monitors([pipeline.inspect])
 
 
 # WebSocket broadcast

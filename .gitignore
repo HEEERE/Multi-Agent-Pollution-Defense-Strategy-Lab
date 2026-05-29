@@ -22,7 +22,7 @@ build/
 *.db-wal
 *.db-journal
 backend/data/
-backend/app/data/chroma_db/
+backend/app/data/
 
 # Frontend env (local dev overrides)
 frontend/.env

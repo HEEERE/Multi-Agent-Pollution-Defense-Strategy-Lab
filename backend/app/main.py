@@ -128,6 +128,8 @@ async def reset_settings_category(category: str) -> dict[str, object]:
         raise HTTPException(status_code=404, detail=f"Unknown category: {category}")
     mgr = get_settings_manager()
     values = await mgr.reset_category(category)
+    if category in {"detectors", "llm"}:
+        rebuild_runtime_pipeline()
     return {"category": category, "values": values}
 
 
@@ -221,6 +223,8 @@ async def delete_trace(trace_id: str) -> dict:
 async def get_trace_graph(trace_id: str) -> dict:
     store = await get_event_store()
     events = await store.get_events_by_trace(trace_id)
+    if not events:
+        raise HTTPException(status_code=404, detail="trace not found")
     builder = TraceGraphBuilder()
     graph = builder.build(events)
     return graph.model_dump(mode="json")
@@ -230,6 +234,8 @@ async def get_trace_graph(trace_id: str) -> dict:
 async def get_trace_contamination(trace_id: str) -> dict:
     store = await get_event_store()
     events = await store.get_events_by_trace(trace_id)
+    if not events:
+        raise HTTPException(status_code=404, detail="trace not found")
     builder = TraceGraphBuilder()
     graph = builder.build(events)
     analyzer = ContaminationAnalyzer()
