@@ -126,9 +126,14 @@ class DefenseCoordinator:
 
         if action == "allow":
             pass
-        elif action in {"alert", "challenge"}:
+        elif action == "alert":
             status = EventStatus.CHALLENGED
             action_taken = ActionTaken.ALERT
+            severity = EventSeverity.WARNING
+            contamination_score = max(contamination_score, 0.35)
+        elif action == "challenge":
+            status = EventStatus.CHALLENGED
+            action_taken = ActionTaken.CHALLENGE
             severity = EventSeverity.WARNING
             contamination_score = max(contamination_score, 0.35)
         elif action == "quarantine":

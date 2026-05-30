@@ -113,8 +113,34 @@ class TestContainmentRegistry:
         assert ("Red_Attacker", "Task_Agent_A") in registry.blocked_edges
         assert "key_001" in registry.revoked_memory_keys
 
-    def test_release_node_removes_quarantine(self):
+    def test_release_node_removes_quarantine_and_edges(self):
         registry = ContainmentRegistry()
         registry.quarantined_nodes.add("Task_Agent_A")
+        registry.blocked_edges.add(("Task_Agent_A", "Task_Agent_B"))
+        registry.blocked_edges.add(("Red_Attacker", "Task_Agent_A"))
+        registry.blocked_edges.add(("Gateway", "Task_Agent_B"))  # unrelated
         registry.release_node("Task_Agent_A")
         assert "Task_Agent_A" not in registry.quarantined_nodes
+        assert ("Task_Agent_A", "Task_Agent_B") not in registry.blocked_edges
+        assert ("Red_Attacker", "Task_Agent_A") not in registry.blocked_edges
+        assert ("Gateway", "Task_Agent_B") in registry.blocked_edges  # preserved
+
+    def test_release_tool_removes_isolation(self):
+        registry = ContainmentRegistry()
+        registry.isolated_tools.add("Tool_RAG_Vector")
+        registry.release_tool("Tool_RAG_Vector")
+        assert "Tool_RAG_Vector" not in registry.isolated_tools
+
+    def test_release_edge_removes_specific_edge(self):
+        registry = ContainmentRegistry()
+        registry.blocked_edges.add(("A", "B"))
+        registry.blocked_edges.add(("A", "C"))
+        registry.release_edge("A", "B")
+        assert ("A", "B") not in registry.blocked_edges
+        assert ("A", "C") in registry.blocked_edges
+
+    def test_release_memory_key_restores_access(self):
+        registry = ContainmentRegistry()
+        registry.revoked_memory_keys.add("key_001")
+        registry.release_memory_key("key_001")
+        assert "key_001" not in registry.revoked_memory_keys

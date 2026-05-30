@@ -33,6 +33,19 @@ class ContainmentRegistry:
 
     def release_node(self, node_id: str) -> None:
         self.quarantined_nodes.discard(node_id)
+        self.blocked_edges = {
+            edge for edge in self.blocked_edges
+            if edge[0] != node_id and edge[1] != node_id
+        }
+
+    def release_tool(self, tool_id: str) -> None:
+        self.isolated_tools.discard(tool_id)
+
+    def release_edge(self, source: str, target: str) -> None:
+        self.blocked_edges.discard((source, target))
+
+    def release_memory_key(self, key: str) -> None:
+        self.revoked_memory_keys.discard(key)
 
 
 class ContainmentPlanner:

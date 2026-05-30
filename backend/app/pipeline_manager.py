@@ -15,7 +15,10 @@ class PipelineManager:
         from app.defense.manager import get_defense_coordinator
 
         llm_client = get_llm_client_manager().get_client()
-        defense_coordinator = get_defense_coordinator(bus=message_bus)
+        defense_coordinator = get_defense_coordinator(
+            bus=message_bus,
+            event_store=message_bus.event_store,
+        )
         self._pipeline = create_default_pipeline(
             llm_client=llm_client,
             bus=message_bus,

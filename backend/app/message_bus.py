@@ -52,6 +52,10 @@ class MessageBus:
     def bind_containment_registry(self, registry) -> None:
         self._containment_registry = registry
 
+    @property
+    def event_store(self):
+        return self._event_store
+
     def subscribe(self, node_id: str, handler: EventHandler) -> None:
         self._handlers[node_id] = handler
 
