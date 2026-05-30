@@ -1,3 +1,4 @@
+import os
 from functools import lru_cache
 
 from pydantic import Field, HttpUrl
@@ -26,3 +27,15 @@ class Settings(BaseSettings):
 @lru_cache
 def get_settings() -> Settings:
     return Settings()
+
+
+def get_cors_origins() -> list[str]:
+    from app.settings_manager import get_settings_manager
+    mgr = get_settings_manager()
+    origins_str = mgr.get_value_sync("system", "system.cors_allowed_origins", None)
+    if origins_str and isinstance(origins_str, str) and origins_str.strip():
+        return [o.strip() for o in origins_str.split(",") if o.strip()]
+    env_origins = os.environ.get("CORS_ALLOWED_ORIGINS", "")
+    if env_origins:
+        return [o.strip() for o in env_origins.split(",") if o.strip()]
+    return ["http://localhost:5173", "http://127.0.0.1:5173", "http://localhost:3000", "http://127.0.0.1:3000"]

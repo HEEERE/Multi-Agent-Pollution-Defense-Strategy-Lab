@@ -6,12 +6,6 @@ A research and product platform for simulating, observing, recording, and replay
 
 ```mermaid
 graph TB
-    subgraph Frontend["Frontend (React + Vite + ReactFlow + Zustand)"]
-        LM[Live Monitor]
-        ES[Experiment Studio]
-        RA[Replay Analyzer]
-    end
-
     subgraph Backend["Backend (FastAPI)"]
         API[REST API / WebSocket]
         MB[MessageBus]
@@ -27,7 +21,6 @@ graph TB
         VS[(ChromaDB<br/>Vector Store)]
     end
 
-    Frontend <-->|REST + WebSocket| API
     API --> MB
     MB --> L1 --> L2 --> L3
     L2 <--> VS
@@ -53,9 +46,6 @@ graph TB
 |-------|-----------|
 | Backend | Python 3.11+, FastAPI, aiosqlite, Pydantic v2, httpx |
 | Detection | Regex, ChromaDB + sentence-transformers, MiMo LLM |
-| Frontend | TypeScript 5.6, React 18, Vite 5, Tailwind CSS 3.4 |
-| Visualization | @xyflow/react (ReactFlow), lucide-react |
-| State | Zustand 5 |
 | Database | SQLite (WAL mode) + ChromaDB (persistent) |
 
 ## Quick Start
@@ -66,13 +56,11 @@ graph TB
 docker compose up --build
 ```
 
-- Frontend: `http://localhost:3000`
 - Backend API docs: `http://localhost:8000/docs`
+- Health check: `http://localhost:8000/health`
 - WebSocket: `ws://localhost:8000/ws/events`
 
 ### Manual
-
-**Backend**
 
 ```powershell
 cd backend
@@ -82,18 +70,6 @@ pip install -r requirements.txt
 Copy-Item .env.example .env
 uvicorn app.main:app --reload --host 127.0.0.1 --port 8000
 ```
-
-**Frontend**
-
-```powershell
-cd frontend
-npm install
-npm run dev
-```
-
-Open `http://127.0.0.1:5173`. The Vite dev server proxies `/api` to `http://127.0.0.1:8000` and `/ws` to the backend WebSocket automatically — no `.env` file needed for local development.
-
-> **Docker users:** The frontend nginx proxies `/api/` and `/ws/` to the backend, so the app uses relative paths automatically.
 
 ### Offline Demo Mode
 
@@ -106,8 +82,41 @@ Set `LLM_ENABLED=false` in `backend/.env` — no API key required. All detectors
 ├── backend/
 │   ├── Dockerfile
 │   ├── app/
-│   │   ├── main.py                 # FastAPI entry (~28 REST + 1 WebSocket)
-│   │   ├── schemas.py              # Pydantic models & enums
+│   │   ├── main.py                 # FastAPI entry (create_app factory)
+│   │   ├── api/
+│   │   │   └── routes/             # APIRouter modules per domain
+│   │   │       ├── health.py       # /health, /api/platform/config
+│   │   │       ├── settings.py     # /api/v1/settings/*
+│   │   │       ├── events.py       # /api/v1/events/*
+│   │   │       ├── traces.py       # /api/v1/traces/*
+│   │   │       ├── tasks.py        # /api/v1/tasks/*
+│   │   │       ├── policies.py     # /api/v1/policies/*
+│   │   │       ├── playbooks.py    # /api/v1/playbooks/*
+│   │   │       ├── experiments.py  # /api/v1/experiments/*
+│   │   │       ├── replay.py       # /api/v1/replay/*
+│   │   │       ├── benchmark.py    # /api/v1/benchmark/*
+│   │   │       ├── honeypot.py     # /api/v1/honeypot/*
+│   │   │       └── websocket.py    # /ws/events
+│   │   ├── core/
+│   │   │   ├── config.py           # Settings + CORS helpers
+│   │   │   ├── lifespan.py         # Startup/shutdown lifecycle
+│   │   │   └── errors.py           # Error handlers
+│   │   ├── services/               # Business logic layer
+│   │   │   ├── event_service.py
+│   │   │   ├── trace_service.py
+│   │   │   ├── replay_service.py
+│   │   │   ├── experiment_service.py
+│   │   │   ├── benchmark_service.py
+│   │   │   └── settings_service.py
+│   │   ├── schemas/                # Pydantic models per domain
+│   │   │   ├── common.py           # Enums & helpers
+│   │   │   ├── events.py           # AgentEvent, EventSpec
+│   │   │   ├── traces.py           # TraceSummary
+│   │   │   ├── experiments.py      # Experiment configs & metrics
+│   │   │   ├── replay.py           # ReplaySession, ReplayState
+│   │   │   ├── settings.py         # Settings models
+│   │   │   ├── benchmark.py        # BenchmarkReport, LevelStats
+│   │   │   └── honeypot.py         # ThreatIntelReport
 │   │   ├── message_bus.py          # Central async event routing
 │   │   ├── event_store.py          # SQLite persistence (WAL)
 │   │   ├── pipeline_manager.py     # Pipeline lifecycle (rebuilds on settings change)
@@ -140,33 +149,6 @@ Set `LLM_ENABLED=false` in `backend/.env` — no API key required. All detectors
 │   │   ├── test_contamination_analyzer.py
 │   │   └── test_event_store_migration.py
 │   └── requirements.txt
-├── frontend/
-│   ├── Dockerfile
-│   ├── nginx.conf
-│   └── src/
-│       ├── pages/
-│       │   ├── LiveMonitor.tsx      # Real-time topology + event console
-│       │   ├── ExperimentStudio.tsx # Experiment runner + metrics
-│       │   ├── ReplayAnalyzer.tsx   # Step-through trace playback
-│       │   └── SettingsPage.tsx     # Runtime configuration console
-│       ├── components/
-│       │   ├── AgentNode.tsx        # Custom ReactFlow node (animated)
-│       │   ├── EventConsole.tsx     # Real-time security console
-│       │   ├── MonitorStatusPanel.tsx # Pipeline status overlay (draggable)
-│       │   ├── NodeDetailPanel.tsx  # Node detail popover
-│       │   ├── PlaybookPanel.tsx    # One-click attack scenarios (draggable)
-│       │   ├── SettingsSection.tsx  # Reusable settings category card
-│       │   └── Toast.tsx            # Toast notification component
-│       ├── hooks/
-│       │   └── useDraggable.ts      # Drag-to-reposition hook
-│       ├── i18n/
-│       │   ├── context.tsx          # LanguageProvider + useT hook
-│       │   ├── en.json              # English translations
-│       │   └── zh.json              # Chinese translations
-│       ├── store.ts                 # Zustand global state
-│       ├── api.ts                   # Backend API client (relative paths)
-│       └── types.ts                 # TypeScript definitions
-└── .dockerignore
 ```
 
 ## Key Capabilities
@@ -177,8 +159,6 @@ Set `LLM_ENABLED=false` in `backend/.env` — no API key required. All detectors
 - **Experiment System** — Reproducible experiments with 10 automated metrics
 - **Benchmark System** — 29 built-in payloads (19 attack + 10 safe), per-level recall/FPR/latency stats, persisted to SQLite
 - **Replay Engine** — Cursor-based trace step-through with play/pause/seek/speed (0.1x–16x)
-- **Visual Console** — ReactFlow topology with real-time infection ripple, edge contamination pulse, quarantine animation
-- **Monitor Status Panel** — Real-time per-level interception counts and detection reasons
 - **6 Built-in Playbooks** — EventSpec template pattern ensures each run produces a fresh trace with unique IDs
 - **Policy Engine** — Rule-based action decisions wired into runtime pipeline; actively enforces block/isolate/quarantine by updating `action_taken` and `status` on events, not just audit
 - **Contamination Analysis** — Propagation depth, blast radius, time-to-detection, recovery success, persistence metrics
@@ -197,34 +177,48 @@ A rule-based policy engine sits between detection and action in the runtime pipe
 
 | Method | Path | Description |
 |--------|------|-------------|
-| GET | `/api/events` | Query events by trace, severity, status |
-| GET | `/api/traces` | List all trace summaries |
-| GET | `/api/traces/{id}` | Full trace replay |
-| GET | `/api/traces/{id}/graph` | Get TraceGraph for a trace |
-| GET | `/api/traces/{id}/contamination` | Get contamination metrics for a trace |
-| DELETE | `/api/traces/{id}` | Delete a trace |
-| GET | `/api/settings` | Get all settings categories |
-| GET | `/api/settings/{category}` | Get settings for a category |
-| PUT | `/api/settings/{category}` | Update settings for a category |
-| POST | `/api/settings/{category}/reset` | Reset a category to defaults |
-| GET | `/api/policies` | List active policies |
-| POST | `/api/policies/evaluate` | Evaluate a policy against an event |
-| GET | `/api/playbooks` | List playbook scenarios |
-| POST | `/api/playbooks/{id}/run` | Run a playbook (streams via WebSocket) |
-| POST | `/api/experiments` | Create and run an experiment |
-| GET | `/api/experiments` | List all experiments |
-| GET | `/api/experiments/{id}/metrics` | Get experiment metrics |
-| POST | `/api/replay/{trace_id}/start` | Start replay session |
-| POST | `/api/replay/{sid}/step` | Step forward/backward |
-| POST | `/api/replay/{sid}/seek` | Seek to position |
-| POST | `/api/benchmark/run` | Run benchmark (29 payloads) |
-| GET | `/api/benchmark/reports` | List benchmark reports |
-| GET | `/api/benchmark/reports/{id}` | Get benchmark report |
-| GET | `/api/honeypot/intel` | Get honeypot threat intelligence |
-| POST | `/api/honeypot/intel/feed-vector` | Feed novel honeypot payloads to vector store |
+| GET | `/health` | Health check |
+| GET | `/api/platform/config` | Platform configuration |
+| GET | `/api/v1/events` | Query events by trace, severity, status |
+| POST | `/api/v1/events/broadcast` | Broadcast an event to WebSocket clients |
+| GET | `/api/v1/events/latest` | Get latest events |
+| GET | `/api/v1/events/{event_id}` | Get event by ID |
+| POST | `/api/v1/tasks/demo` | Run demo gateway-to-agent task |
+| POST | `/api/v1/tasks/tool-demo` | Run demo agent-to-tool task |
+| GET | `/api/v1/traces` | List all trace summaries |
+| GET | `/api/v1/traces/{id}` | Full trace replay |
+| GET | `/api/v1/traces/{id}/summary` | Get trace summary |
+| GET | `/api/v1/traces/{id}/graph` | Get TraceGraph for a trace |
+| GET | `/api/v1/traces/{id}/contamination` | Get contamination metrics for a trace |
+| DELETE | `/api/v1/traces/{id}` | Delete a trace |
+| GET | `/api/v1/settings` | Get all settings categories |
+| GET | `/api/v1/settings/{category}` | Get settings for a category |
+| PUT | `/api/v1/settings/{category}` | Update settings for a category |
+| POST | `/api/v1/settings/{category}/reset` | Reset a category to defaults |
+| GET | `/api/v1/policies` | List active policies |
+| POST | `/api/v1/policies/evaluate` | Evaluate a policy against an event |
+| GET | `/api/v1/playbooks` | List playbook scenarios |
+| POST | `/api/v1/playbooks/{id}/run` | Run a playbook (streams via WebSocket) |
+| POST | `/api/v1/experiments` | Create and run an experiment |
+| GET | `/api/v1/experiments` | List all experiments |
+| GET | `/api/v1/experiments/{id}` | Get experiment details |
+| GET | `/api/v1/experiments/{id}/trace` | Get experiment trace |
+| GET | `/api/v1/experiments/{id}/metrics` | Get experiment metrics |
+| DELETE | `/api/v1/experiments/{id}` | Delete an experiment |
+| POST | `/api/v1/replay/{trace_id}/start` | Start replay session |
+| POST | `/api/v1/replay/{sid}/pause` | Pause replay |
+| POST | `/api/v1/replay/{sid}/resume` | Resume replay |
+| POST | `/api/v1/replay/{sid}/step` | Step forward |
+| POST | `/api/v1/replay/{sid}/seek` | Seek to position |
+| POST | `/api/v1/replay/{sid}/speed` | Set replay speed |
+| GET | `/api/v1/replay/{sid}/state` | Get replay state |
+| POST | `/api/v1/benchmark/run` | Run benchmark (29 payloads) |
+| GET | `/api/v1/benchmark/reports` | List benchmark reports |
+| GET | `/api/v1/benchmark/reports/{id}` | Get benchmark report |
+| GET | `/api/v1/honeypot/intel` | Get honeypot threat intelligence |
+| POST | `/api/v1/honeypot/intel/feed-vector` | Feed novel honeypot payloads to vector store |
 
-WebSocket (dev): `ws://127.0.0.1:8000/ws/events`
-WebSocket (Docker): `ws://localhost:3000/ws/events` (proxied by nginx)
+WebSocket: `ws://127.0.0.1:8000/ws/events`
 
 ## License
 

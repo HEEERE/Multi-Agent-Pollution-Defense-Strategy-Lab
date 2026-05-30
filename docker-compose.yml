@@ -10,13 +10,5 @@ services:
       - ./backend/data:/app/data
     environment:
       - LLM_ENABLED=false
-    restart: unless-stopped
-
-  frontend:
-    build: ./frontend
-    pull_policy: if_not_present
-    ports:
-      - "3000:80"
-    depends_on:
-      - backend
+      - CORS_ALLOWED_ORIGINS=http://localhost:5173,http://127.0.0.1:5173
     restart: unless-stopped

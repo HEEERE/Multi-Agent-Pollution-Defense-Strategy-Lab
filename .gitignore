@@ -10,12 +10,6 @@ __pycache__/
 # Environment
 .env
 
-# Node / Frontend
-node_modules/
-dist/
-build/
-.npm-cache/
-
 # Database (runtime-generated)
 *.db
 *.db-shm
@@ -23,11 +17,6 @@ build/
 *.db-journal
 backend/data/
 backend/app/data/
-
-# Frontend env (local dev overrides)
-frontend/.env
-frontend/.env.local
-frontend/.env.*.local
 
 # IDE
 .vscode/
