@@ -1,5 +1,7 @@
 """Benchmark business logic — run benchmarks and retrieve reports."""
 
+from fastapi import HTTPException
+
 from app.event_store import get_event_store
 from app.benchmark.runner import BenchmarkRunner
 from app.llm.factory import get_llm_client
@@ -24,6 +26,9 @@ async def list_reports() -> list[dict]:
     ]
 
 
-async def get_report(report_id: str) -> dict | None:
+async def get_report(report_id: str) -> dict:
     store = await get_event_store()
-    return await store.get_benchmark_report(report_id)
+    report = await store.get_benchmark_report(report_id)
+    if report is None:
+        raise HTTPException(status_code=404, detail="report not found")
+    return report

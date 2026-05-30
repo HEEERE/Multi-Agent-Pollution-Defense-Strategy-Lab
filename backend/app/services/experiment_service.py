@@ -20,9 +20,12 @@ async def list_experiments(limit: int = 50, offset: int = 0) -> list[dict]:
     return await store.list_experiments(limit=limit, offset=offset)
 
 
-async def get_experiment(experiment_id: str) -> dict | None:
+async def get_experiment(experiment_id: str) -> dict:
     store = await get_event_store()
-    return await store.get_experiment(experiment_id)
+    exp = await store.get_experiment(experiment_id)
+    if exp is None:
+        raise HTTPException(status_code=404, detail="experiment not found")
+    return exp
 
 
 async def delete_experiment(experiment_id: str) -> dict:

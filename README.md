@@ -143,11 +143,19 @@ Set `LLM_ENABLED=false` in `backend/.env` — no API key required. All detectors
 │   │       ├── mimo_client.py      # MiMo API client
 │   │       └── base.py             # LLMClient protocol
 │   ├── tests/
+│   │   ├── conftest.py             # TestClient + temp DB fixtures
 │   │   ├── test_contract.py        # Core data-integrity contract tests
 │   │   ├── test_policy_engine.py   # Policy evaluation unit tests
 │   │   ├── test_trace_graph_builder.py
 │   │   ├── test_contamination_analyzer.py
-│   │   └── test_event_store_migration.py
+│   │   ├── test_event_store_migration.py
+│   │   └── api/                    # API-level route tests
+│   │       ├── test_health_api.py
+│   │       ├── test_events_api.py
+│   │       ├── test_traces_api.py
+│   │       ├── test_settings_api.py
+│   │       ├── test_replay_api.py
+│   │       └── test_benchmark_api.py
 │   └── requirements.txt
 ```
 
@@ -163,7 +171,7 @@ Set `LLM_ENABLED=false` in `backend/.env` — no API key required. All detectors
 - **Policy Engine** — Rule-based action decisions wired into runtime pipeline; actively enforces block/isolate/quarantine by updating `action_taken` and `status` on events, not just audit
 - **Contamination Analysis** — Propagation depth, blast radius, time-to-detection, recovery success, persistence metrics
 - **Runtime Settings** — Per-detector enable/disable (regex, semantic, llm_intent), threshold tuning, and LLM config changes trigger live pipeline rebuild with fresh LLM client (no restart required); reset restores factory defaults and rebuilds pipeline. Settings are gated: only detector/LLM changes trigger rebuild; agent/system changes are stored without unnecessary pipeline churn.
-- **Contract Tests** — 11 automated tests covering playbook isolation, block semantics, trace propagation, and pipeline integrity
+- **Test Suite** — 55 tests: 23 API-level route tests (health, events, traces, settings, replay, benchmark) + 32 unit/integration tests covering playbook isolation, block semantics, trace propagation, pipeline integrity, and store migration
 
 ## TraceGraph & Contamination Analysis
 

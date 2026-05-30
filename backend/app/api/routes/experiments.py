@@ -19,7 +19,7 @@ async def list_experiments(limit: int = 50, offset: int = 0) -> list[dict]:
 
 
 @router.get("/{experiment_id}")
-async def get_experiment(experiment_id: str) -> dict | None:
+async def get_experiment(experiment_id: str) -> dict:
     return await experiment_service.get_experiment(experiment_id)
 
 

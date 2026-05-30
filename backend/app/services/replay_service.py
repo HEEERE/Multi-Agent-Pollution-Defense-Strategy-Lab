@@ -1,4 +1,10 @@
-"""Replay business logic — session management and replay orchestration."""
+"""Replay business logic — session management and replay orchestration.
+
+Sessions are stored in-memory (process-local dict). Not suitable for multi-worker
+deployment without an external session store (Redis, SQLite, etc.).
+"""
+
+import time
 
 from fastapi import HTTPException
 
@@ -6,7 +12,29 @@ from app.event_store import get_event_store
 from app.replay.engine import ReplayEngine
 
 
+MAX_REPLAY_SESSIONS = 100
+REPLAY_SESSION_TTL_SECONDS = 3600
+
 _replay_sessions: dict[str, ReplayEngine] = {}
+_session_created_at: dict[str, float] = {}
+
+
+def _evict_expired_sessions() -> None:
+    now = time.time()
+    expired = [
+        sid for sid, created in _session_created_at.items()
+        if now - created > REPLAY_SESSION_TTL_SECONDS
+    ]
+    for sid in expired:
+        _replay_sessions.pop(sid, None)
+        _session_created_at.pop(sid, None)
+
+
+def _enforce_max_sessions() -> None:
+    if len(_replay_sessions) >= MAX_REPLAY_SESSIONS:
+        oldest = min(_session_created_at, key=_session_created_at.get)
+        _replay_sessions.pop(oldest, None)
+        _session_created_at.pop(oldest, None)
 
 
 async def start_replay(trace_id: str) -> dict:
@@ -14,8 +42,11 @@ async def start_replay(trace_id: str) -> dict:
     events = await store.get_events_by_trace(trace_id)
     if not events:
         raise HTTPException(status_code=404, detail="trace not found")
+    _evict_expired_sessions()
+    _enforce_max_sessions()
     engine = ReplayEngine(events)
     _replay_sessions[engine.session_id] = engine
+    _session_created_at[engine.session_id] = time.time()
     engine.play()
     return engine.get_state().model_dump()
 

@@ -18,5 +18,5 @@ async def list_benchmark_reports() -> list[dict]:
 
 
 @router.get("/reports/{report_id}")
-async def get_benchmark_report(report_id: str) -> dict | None:
+async def get_benchmark_report(report_id: str) -> dict:
     return await benchmark_service.get_report(report_id)

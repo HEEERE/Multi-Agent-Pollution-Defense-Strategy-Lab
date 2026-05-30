@@ -44,6 +44,6 @@ async def latest_events(limit: int = 100) -> list[AgentEvent]:
     return await event_service.get_latest_events(limit=limit)
 
 
-@router.get("/{event_id}", response_model=AgentEvent | None)
-async def get_event(event_id: str) -> AgentEvent | None:
+@router.get("/{event_id}")
+async def get_event(event_id: str) -> AgentEvent:
     return await event_service.get_event(event_id)
