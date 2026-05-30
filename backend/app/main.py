@@ -3,6 +3,7 @@ from fastapi.middleware.cors import CORSMiddleware
 
 from app.api.routes import (
     benchmark,
+    defense,
     events,
     experiments,
     health,
@@ -47,6 +48,7 @@ def create_app() -> FastAPI:
     app.include_router(replay.router, prefix="/api/v1/replay", tags=["replay"])
     app.include_router(benchmark.router, prefix="/api/v1/benchmark", tags=["benchmark"])
     app.include_router(honeypot.router, prefix="/api/v1/honeypot", tags=["honeypot"])
+    app.include_router(defense.router, prefix="/api/v1/defense", tags=["defense"])
     app.include_router(websocket.router)
 
     return app

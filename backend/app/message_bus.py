@@ -2,7 +2,7 @@ from collections import deque
 from collections.abc import Awaitable, Callable
 from contextvars import ContextVar
 
-from app.schemas import ActionTaken, AgentEvent
+from app.schemas import ActionTaken, AgentEvent, EventSeverity, EventStatus
 
 EventHandler = Callable[[AgentEvent], Awaitable[None]]
 MonitorHook = Callable[[AgentEvent], Awaitable[AgentEvent | None]]
@@ -44,9 +44,13 @@ class MessageBus:
         self._broadcast_hooks: list[BroadcastHook] = []
         self.history: deque[AgentEvent] = deque(maxlen=max_history)
         self._event_store = None
+        self._containment_registry = None
 
     def bind_event_store(self, event_store) -> None:
         self._event_store = event_store
+
+    def bind_containment_registry(self, registry) -> None:
+        self._containment_registry = registry
 
     def subscribe(self, node_id: str, handler: EventHandler) -> None:
         self._handlers[node_id] = handler
@@ -99,6 +103,23 @@ class MessageBus:
                 pass
 
         await self._broadcast(inspected_event)
+
+        # Containment check: intercept events from quarantined/blocked nodes
+        if self._containment_registry is not None:
+            blocked, reason = self._containment_registry.blocks_event(inspected_event)
+            if blocked:
+                inspected_event = inspected_event.model_copy(
+                    update={
+                        "status": EventStatus.QUARANTINED,
+                        "action_taken": ActionTaken.BLOCK,
+                        "severity": EventSeverity.CRITICAL,
+                        "metadata": {
+                            **inspected_event.metadata,
+                            "containment_blocked": True,
+                            "containment_reason": reason,
+                        },
+                    }
+                )
 
         if inspected_event.action_taken in (ActionTaken.BLOCK, ActionTaken.ISOLATE):
             return inspected_event

@@ -23,6 +23,8 @@ class EventType(StrEnum):
     TOOL_CALL = "tool_call"
     INTERVENTION = "intervention"
     CHALLENGE = "challenge"
+    JOINT_DEFENSE_DECISION = "joint_defense_decision"
+    RECOVERY = "recovery"
 
 
 class EventStatus(StrEnum):
@@ -56,6 +58,8 @@ class ActionTaken(StrEnum):
     QUARANTINE = "quarantine"
     ISOLATE = "isolate"
     DECOY = "decoy"
+    CHALLENGE = "challenge"
+    RECOVER = "recover"
 
 
 class ActionPolicy(StrEnum):

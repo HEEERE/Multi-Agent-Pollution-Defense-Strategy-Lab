@@ -48,6 +48,7 @@ def create_pipeline(
     config: DetectorPipelineConfig,
     llm_client: LLMClient | None = None,
     bus: MessageBus | None = None,
+    defense_coordinator=None,
 ) -> DetectorPipeline:
     detectors: list[BaseDetector] = []
     for cfg in config.detectors:
@@ -62,12 +63,14 @@ def create_pipeline(
         min_severity_for_llm=config.min_severity_for_llm,
         bus=bus,
         policy_engine=PolicyEngine(),
+        defense_coordinator=defense_coordinator,
     )
 
 
 def create_default_pipeline(
     llm_client: LLMClient | None = None,
     bus: MessageBus | None = None,
+    defense_coordinator=None,
 ) -> DetectorPipeline:
     from app.settings_manager import get_settings_manager
     mgr = get_settings_manager()
@@ -113,4 +116,4 @@ def create_default_pipeline(
         log_all_detections=bool(log_all),
         min_severity_for_llm=EventSeverity(str(min_sev)),
     )
-    return create_pipeline(config, llm_client, bus)
+    return create_pipeline(config, llm_client, bus, defense_coordinator=defense_coordinator)

@@ -56,8 +56,11 @@ fake_kg = FakeTool("FakeTool_KG", message_bus, tool_type="kg")
 
 
 def rebuild_runtime_pipeline() -> None:
+    from app.defense.manager import get_containment_registry
     from app.pipeline_manager import get_pipeline_manager
+
     get_pipeline_manager().rebuild()
+    message_bus.bind_containment_registry(get_containment_registry())
 
 
 # WebSocket broadcast

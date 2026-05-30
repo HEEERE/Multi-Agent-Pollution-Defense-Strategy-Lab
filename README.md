@@ -1,6 +1,6 @@
 # Multi-Agent Cascading Pollution Detection & Defense Platform
 
-A research and product platform for simulating, observing, recording, and replaying **Prompt Injection / RAG Context Poisoning / Tool Pollution Propagation** in multi-agent systems. Features a pluggable 3-level Monitor Pipeline with MiMo LLM detection for real-time alerting, blocking, and isolation.
+A research and product platform for simulating, observing, recording, and replaying **Prompt Injection / RAG Context Poisoning / Tool Pollution Propagation** in multi-agent systems. Features a pluggable 3-level Monitor Pipeline with MiMo LLM detection, plus a **Multi-Agent Joint Defense Coordinator** with 7 specialized guard agents, weighted consensus voting, dynamic containment, and propagation blocking.
 
 ## Architecture
 
@@ -9,10 +9,23 @@ graph TB
     subgraph Backend["Backend (FastAPI)"]
         API[REST API / WebSocket]
         MB[MessageBus]
-        subgraph Pipeline["Monitor Pipeline"]
+        subgraph Pipeline["Monitor Pipeline (Evidence Layer)"]
             L1[L1: RegexDetector<br/>HEURISTIC · BLOCK]
             L2[L2: SemanticDetector<br/>FEATURE · QUARANTINE]
             L3[L3: LLMIntentDetector<br/>LLM_INTENT · QUARANTINE]
+        end
+        subgraph Defense["Joint Defense (Adjudication Layer)"]
+            DC[DefenseCoordinator]
+            G1[PromptGuard]
+            G2[RAGGuard]
+            G3[ToolGuard]
+            G4[MemoryGuard]
+            G5[PolicyGuard]
+            G6[PropagationGuard]
+            G7[HoneypotGuard]
+            CS[Consensus Engine<br/>Veto → Quorum → Weighted → Fallback]
+            CR[ContainmentRegistry<br/>Dynamic Propagation Blocking]
+            TM[ThreatMemory]
         end
         SIM[Simulation Engine]
         EXP[Experiment Runner]
@@ -23,6 +36,11 @@ graph TB
 
     API --> MB
     MB --> L1 --> L2 --> L3
+    L3 --> DC
+    DC --> G1 & G2 & G3 & G4 & G5 & G6 & G7
+    G1 & G2 & G3 & G4 & G5 & G6 & G7 --> CS
+    CS --> CR --> TM
+    MB --> CR
     L2 <--> VS
     MB --> DB
     MB --> SIM
@@ -30,7 +48,9 @@ graph TB
     MB --> RP
 ```
 
-## Defense Tiers
+## Defense Layers
+
+### Detection (Evidence Collection)
 
 | Tier | Mechanism | Technology | Target | Action | Latency |
 |------|-----------|-----------|--------|--------|---------|
@@ -39,6 +59,24 @@ graph TB
 | **L3 LLM Intent** | LLM judgment with structured JSON output | MiMo / DeepSeek / GPT-4o | Cognitive deception, social engineering, covert injection | **QUARANTINE** | ~500ms |
 
 **Fail-Fast**: If L1 blocks, L2 and L3 are skipped. If L2 quarantines, L3 is skipped.
+
+### Joint Defense (Adjudication)
+
+After the detection pipeline collects evidence, the **DefenseCoordinator** runs 7 specialized guard agents in parallel, each producing a weighted verdict. A 4-tier consensus engine aggregates votes:
+
+| Guard | Weight | Focus | Typical Recommendation |
+|-------|--------|-------|----------------------|
+| **PromptGuardAgent** | 1.2 | Prompt injection, jailbreak, role hijacking | block |
+| **RAGGuardAgent** | 1.1 | RAG context pollution, fake trusted paragraphs | quarantine |
+| **ToolGuardAgent** | 1.3 | Unauthorized/dangerous tool calls | block |
+| **MemoryGuardAgent** | 1.2 | Memory poisoning, untrusted writes | block |
+| **PolicyGuardAgent** | 1.4 | Wraps existing PolicyEngine rules | block/quarantine |
+| **PropagationGuardAgent** | 1.5 | Blast radius, chain contamination | isolate |
+| **HoneypotGuardAgent** | 0.8 | Gray-zone detection → decoy routing | decoy |
+
+**Consensus Tiers**: Veto (single high-confidence malicious) → Quorum (ToolGuard+PolicyGuard) → Weighted vote → Fallback allow.
+
+**Containment**: The `ContainmentRegistry` enforces dynamic propagation blocking in `MessageBus.publish()` — quarantined nodes, isolated tools, blocked edges, and revoked memory keys are intercepted before message delivery.
 
 ## Tech Stack
 
@@ -96,6 +134,7 @@ Set `LLM_ENABLED=false` in `backend/.env` — no API key required. All detectors
 │   │   │       ├── replay.py       # /api/v1/replay/*
 │   │   │       ├── benchmark.py    # /api/v1/benchmark/*
 │   │   │       ├── honeypot.py     # /api/v1/honeypot/*
+│   │   │       ├── defense.py      # /api/v1/defense/*
 │   │   │       └── websocket.py    # /ws/events
 │   │   ├── core/
 │   │   │   ├── config.py           # Settings + CORS helpers
@@ -137,6 +176,21 @@ Set `LLM_ENABLED=false` in `backend/.env` — no API key required. All detectors
 │   │   ├── benchmark/              # Automated pipeline benchmarking
 │   │   ├── policy/                 # Policy engine (wired into runtime pipeline)
 │   │   ├── trace_graph/            # TraceGraph builder + contamination analyzer
+│   │   ├── defense/                # Multi-Agent Joint Defense
+│   │   │   ├── coordinator.py      # DefenseCoordinator (adjudication layer)
+│   │   │   ├── consensus.py        # 4-tier consensus engine
+│   │   │   ├── containment.py      # ContainmentRegistry + ContainmentPlanner
+│   │   │   ├── threat_memory.py    # Shared threat intelligence memory
+│   │   │   ├── manager.py          # Singleton factory
+│   │   │   └── guards/             # 7 specialized defender agents
+│   │   │       ├── prompt_guard.py
+│   │   │       ├── rag_guard.py
+│   │   │       ├── tool_guard.py
+│   │   │       ├── memory_guard.py
+│   │   │       ├── policy_guard.py
+│   │   │       ├── propagation_guard.py
+│   │   │       ├── honeypot_guard.py
+│   │   │       └── recovery_agent.py
 │   │   └── llm/                    # LLM provider abstraction
 │   │       ├── client_manager.py   # LLM client lifecycle (reads runtime settings)
 │   │       ├── factory.py          # Client factory
@@ -161,7 +215,10 @@ Set `LLM_ENABLED=false` in `backend/.env` — no API key required. All detectors
 
 ## Key Capabilities
 
-- **3-Level Monitor Pipeline** — L1 Regex (BLOCK) → L2 Semantic/Embedding (QUARANTINE) → L3 LLM Intent (QUARANTINE), with fail-fast short-circuit
+- **3-Level Monitor Pipeline** — L1 Regex (BLOCK) → L2 Semantic/Embedding (QUARANTINE) → L3 LLM Intent (QUARANTINE), with fail-fast short-circuit and Bayesian confidence fusion
+- **Multi-Agent Joint Defense** — 7 specialized guard agents run in parallel after detection; 4-tier consensus (veto → quorum → weighted → fallback) aggregates weighted votes into a unified JointDefenseDecision; ContainmentRegistry enforces dynamic propagation blocking in the MessageBus
+- **Containment & Recovery** — Quarantined nodes, isolated tools, blocked edges, and revoked memory keys are intercepted before message delivery; RecoveryAgent evaluates release conditions
+- **Threat Memory** — Shared in-memory threat intelligence accumulates node risk scores, known attack indicators, and contaminated trace history across defense decisions
 - **Multi-Agent Simulation Engine** — Configurable topology, injection sources, turn-based LLM-driven conversations
 - **Event Store & Trace System** — SQLite WAL persistence with full AgentEvent JSON serialization (all v2 fields preserved on round-trip), trace_id-based causal chain tracking, full replay
 - **Experiment System** — Reproducible experiments with 10 automated metrics
@@ -170,8 +227,8 @@ Set `LLM_ENABLED=false` in `backend/.env` — no API key required. All detectors
 - **6 Built-in Playbooks** — EventSpec template pattern ensures each run produces a fresh trace with unique IDs
 - **Policy Engine** — Rule-based action decisions wired into runtime pipeline; actively enforces block/isolate/quarantine by updating `action_taken` and `status` on events, not just audit
 - **Contamination Analysis** — Propagation depth, blast radius, time-to-detection, recovery success, persistence metrics
-- **Runtime Settings** — Per-detector enable/disable (regex, semantic, llm_intent), threshold tuning, and LLM config changes trigger live pipeline rebuild with fresh LLM client (no restart required); reset restores factory defaults and rebuilds pipeline. Settings are gated: only detector/LLM changes trigger rebuild; agent/system changes are stored without unnecessary pipeline churn.
-- **Test Suite** — 55 tests: 23 API-level route tests (health, events, traces, settings, replay, benchmark) + 32 unit/integration tests covering playbook isolation, block semantics, trace propagation, pipeline integrity, and store migration
+- **Runtime Settings** — Per-detector enable/disable (regex, semantic, llm_intent), threshold tuning, and LLM config changes trigger live pipeline rebuild with fresh LLM client (no restart required); reset restores factory defaults and rebuilds pipeline
+- **Test Suite** — 87 tests: 23 API-level route tests + 64 unit/integration tests (10 consensus, 9 containment, 7 defense coordinator, 6 pipeline joint defense, 6 policy engine, 5 trace graph, 5 contamination, 5 event store migration, 11 contract)
 
 ## TraceGraph & Contamination Analysis
 
@@ -225,6 +282,9 @@ A rule-based policy engine sits between detection and action in the runtime pipe
 | GET | `/api/v1/benchmark/reports/{id}` | Get benchmark report |
 | GET | `/api/v1/honeypot/intel` | Get honeypot threat intelligence |
 | POST | `/api/v1/honeypot/intel/feed-vector` | Feed novel honeypot payloads to vector store |
+| GET | `/api/v1/defense/memory` | Get threat memory snapshot |
+| GET | `/api/v1/defense/decisions/latest` | Get recent joint defense decisions |
+| POST | `/api/v1/defense/containment/release/{node_id}` | Manually release a quarantined node |
 
 WebSocket: `ws://127.0.0.1:8000/ws/events`
 

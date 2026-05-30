@@ -21,6 +21,7 @@ class DetectorPipeline:
         bus: MessageBus | None = None,
         fusion_threshold: float | None = None,
         policy_engine=None,
+        defense_coordinator=None,
     ) -> None:
         self.detectors = detectors
         self.short_circuit = short_circuit
@@ -28,6 +29,7 @@ class DetectorPipeline:
         self.min_severity_for_llm = min_severity_for_llm
         self._bus = bus
         self._policy_engine = policy_engine
+        self._defense_coordinator = defense_coordinator
         if fusion_threshold is not None:
             self.fusion_threshold = fusion_threshold
         else:
@@ -182,6 +184,14 @@ class DetectorPipeline:
                 updates["status"] = EventStatus.QUARANTINED
             final_event = final_event.model_copy(update=updates)
 
+        # ── Joint Defense Coordination ─────────────────────────
+        if self._defense_coordinator is not None:
+            if self._should_joint_defense(final_event, detection_log):
+                joint_decision = await self._defense_coordinator.evaluate(final_event)
+                final_event = self._defense_coordinator.apply_decision(
+                    final_event, joint_decision
+                )
+
         return final_event
 
     @staticmethod
@@ -224,6 +234,35 @@ class DetectorPipeline:
             },
         )
         await self._bus.emit(intervention)
+
+    @staticmethod
+    def _should_joint_defense(
+        event: AgentEvent,
+        detection_log: list[dict],
+    ) -> bool:
+        if event.action_taken in {
+            ActionTaken.ALERT,
+            ActionTaken.QUARANTINE,
+            ActionTaken.BLOCK,
+            ActionTaken.ISOLATE,
+            ActionTaken.DECOY,
+            ActionTaken.CHALLENGE,
+        }:
+            return True
+        if event.severity in {EventSeverity.WARNING, EventSeverity.CRITICAL}:
+            return True
+        if event.trust_level == "untrusted":
+            return True
+        if event.contamination_score >= 0.35:
+            return True
+        if event.risk_tags:
+            return True
+        for item in detection_log:
+            if item.get("is_threat"):
+                return True
+            if float(item.get("confidence", 0.0)) >= 0.45:
+                return True
+        return False
 
     def _allowed_severities(self) -> list[str]:
         levels = ["info", "warning", "critical"]

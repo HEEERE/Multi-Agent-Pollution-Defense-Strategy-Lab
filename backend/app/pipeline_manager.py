@@ -12,8 +12,15 @@ class PipelineManager:
         self._pipeline = None
 
     def rebuild(self) -> None:
+        from app.defense.manager import get_defense_coordinator
+
         llm_client = get_llm_client_manager().get_client()
-        self._pipeline = create_default_pipeline(llm_client=llm_client, bus=message_bus)
+        defense_coordinator = get_defense_coordinator(bus=message_bus)
+        self._pipeline = create_default_pipeline(
+            llm_client=llm_client,
+            bus=message_bus,
+            defense_coordinator=defense_coordinator,
+        )
         message_bus.replace_monitors([self._pipeline.inspect])
 
     @property

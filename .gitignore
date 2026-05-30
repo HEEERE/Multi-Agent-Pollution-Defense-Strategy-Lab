@@ -24,6 +24,7 @@ backend/app/data/
 
 # Claude Code local config
 .claude/
+.claude/worktrees/
 
 # Logs
 *.log
