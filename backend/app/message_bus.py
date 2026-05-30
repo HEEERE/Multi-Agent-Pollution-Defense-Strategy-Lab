@@ -93,18 +93,8 @@ class MessageBus:
         if inspected_event is None:
             return None
 
-        self.history.append(inspected_event)
-        collect_event(inspected_event)
-
-        if self._event_store is not None:
-            try:
-                await self._event_store.store_event(inspected_event)
-            except Exception:
-                pass
-
-        await self._broadcast(inspected_event)
-
-        # Containment check: intercept events from quarantined/blocked nodes
+        # Containment check: intercept BEFORE store/broadcast so downstream
+        # only sees the blocked version.
         if self._containment_registry is not None:
             blocked, reason = self._containment_registry.blocks_event(inspected_event)
             if blocked:
@@ -120,6 +110,17 @@ class MessageBus:
                         },
                     }
                 )
+
+        self.history.append(inspected_event)
+        collect_event(inspected_event)
+
+        if self._event_store is not None:
+            try:
+                await self._event_store.store_event(inspected_event)
+            except Exception:
+                pass
+
+        await self._broadcast(inspected_event)
 
         if inspected_event.action_taken in (ActionTaken.BLOCK, ActionTaken.ISOLATE):
             return inspected_event

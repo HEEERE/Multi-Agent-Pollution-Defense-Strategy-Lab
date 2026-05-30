@@ -57,5 +57,6 @@ def get_defense_coordinator(bus=None, event_store=None) -> DefenseCoordinator:
             event_store=event_store,
             threat_memory=get_threat_memory(),
             containment_planner=ContainmentPlanner(threat_memory=get_threat_memory()),
+            containment_registry=get_containment_registry(),
         )
     return _defense_coordinator

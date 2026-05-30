@@ -26,6 +26,7 @@ class DefenseCoordinator:
         event_store=None,
         threat_memory: ThreatMemory | None = None,
         containment_planner: ContainmentPlanner | None = None,
+        containment_registry=None,
     ) -> None:
         self.defenders = defenders
         self.bus = bus
@@ -34,6 +35,7 @@ class DefenseCoordinator:
         self.containment_planner = containment_planner or ContainmentPlanner(
             threat_memory=self.threat_memory
         )
+        self.containment_registry = containment_registry
 
     async def evaluate(self, event: AgentEvent) -> JointDefenseDecision:
         context = await self._build_context(event)
@@ -74,6 +76,9 @@ class DefenseCoordinator:
         )
 
         self.threat_memory.record_decision(event, decision)
+
+        if decision.containment_plan is not None and self.containment_registry is not None:
+            self.containment_registry.apply_plan(decision.containment_plan)
 
         if self.bus is not None:
             await self._emit_joint_decision(decision)
