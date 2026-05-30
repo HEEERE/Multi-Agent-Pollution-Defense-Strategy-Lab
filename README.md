@@ -228,7 +228,7 @@ Set `LLM_ENABLED=false` in `backend/.env` — no API key required. All detectors
 - **Policy Engine** — Rule-based action decisions wired into runtime pipeline; actively enforces block/isolate/quarantine by updating `action_taken` and `status` on events, not just audit
 - **Contamination Analysis** — Propagation depth, blast radius, time-to-detection, recovery success, persistence metrics
 - **Runtime Settings** — Per-detector enable/disable (regex, semantic, llm_intent), threshold tuning, and LLM config changes trigger live pipeline rebuild with fresh LLM client (no restart required); reset restores factory defaults and rebuilds pipeline
-- **Test Suite** — 87 tests: 23 API-level route tests + 64 unit/integration tests (10 consensus, 9 containment, 7 defense coordinator, 6 pipeline joint defense, 6 policy engine, 5 trace graph, 5 contamination, 5 event store migration, 11 contract)
+- **Test Suite** — 87 tests: 23 API-level route tests + 64 unit/integration tests (10 consensus, 12 containment, 7 defense coordinator, 6 pipeline joint defense, 6 policy engine, 5 trace graph, 5 contamination, 5 event store migration, 11 contract)
 
 ## TraceGraph & Contamination Analysis
 
@@ -284,7 +284,13 @@ A rule-based policy engine sits between detection and action in the runtime pipe
 | POST | `/api/v1/honeypot/intel/feed-vector` | Feed novel honeypot payloads to vector store |
 | GET | `/api/v1/defense/memory` | Get threat memory snapshot |
 | GET | `/api/v1/defense/decisions/latest` | Get recent joint defense decisions |
-| POST | `/api/v1/defense/containment/release/{node_id}` | Manually release a quarantined node |
+| GET | `/api/v1/defense/containment/status` | Get full containment state |
+| POST | `/api/v1/defense/containment/release/node/{node_id}` | Release a quarantined node |
+| POST | `/api/v1/defense/containment/release/tool/{tool_id}` | Release an isolated tool |
+| POST | `/api/v1/defense/containment/release/edge` | Unblock an edge (source, target) |
+| POST | `/api/v1/defense/containment/release/memory/{key}` | Restore a revoked memory key |
+| POST | `/api/v1/defense/recovery/check/{node_id}` | Check if a node can be recovered |
+| POST | `/api/v1/defense/recovery/approve/{node_id}` | Approve recovery and emit RECOVERY event |
 
 WebSocket: `ws://127.0.0.1:8000/ws/events`
 
