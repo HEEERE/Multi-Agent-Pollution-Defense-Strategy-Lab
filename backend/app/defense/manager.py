@@ -9,6 +9,7 @@ from app.defense.guards.policy_guard import PolicyGuardAgent
 from app.defense.guards.prompt_guard import PromptGuardAgent
 from app.defense.guards.propagation_guard import PropagationGuardAgent
 from app.defense.guards.rag_guard import RAGGuardAgent
+from app.defense.guards.recovery_agent import RecoveryAgent
 from app.defense.guards.tool_guard import ToolGuardAgent
 from app.defense.threat_memory import ThreatMemory
 from app.policy.engine import PolicyEngine
@@ -58,6 +59,7 @@ def get_defense_coordinator(bus=None, event_store=None) -> DefenseCoordinator:
             threat_memory=get_threat_memory(),
             containment_planner=ContainmentPlanner(threat_memory=get_threat_memory()),
             containment_registry=get_containment_registry(),
+            recovery_agent=RecoveryAgent(threat_memory=get_threat_memory()),
         )
     else:
         if bus is not None:

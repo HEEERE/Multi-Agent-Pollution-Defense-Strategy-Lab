@@ -27,6 +27,7 @@ class DefenseCoordinator:
         threat_memory: ThreatMemory | None = None,
         containment_planner: ContainmentPlanner | None = None,
         containment_registry=None,
+        recovery_agent=None,
     ) -> None:
         self.defenders = defenders
         self.bus = bus
@@ -36,6 +37,7 @@ class DefenseCoordinator:
             threat_memory=self.threat_memory
         )
         self.containment_registry = containment_registry
+        self.recovery_agent = recovery_agent
 
     async def evaluate(self, event: AgentEvent) -> JointDefenseDecision:
         context = await self._build_context(event)
@@ -79,6 +81,14 @@ class DefenseCoordinator:
 
         if decision.containment_plan is not None and self.containment_registry is not None:
             self.containment_registry.apply_plan(decision.containment_plan)
+
+            # Schedule recovery checks for quarantined nodes
+            if (
+                decision.containment_plan.recovery_required
+                and self.recovery_agent is not None
+                and self.bus is not None
+            ):
+                await self._check_recovery(decision.containment_plan, event.trace_id)
 
         if self.bus is not None:
             await self._emit_joint_decision(decision)
@@ -204,6 +214,16 @@ class DefenseCoordinator:
             },
         )
         await self.bus.emit(event)
+
+    async def _check_recovery(
+        self, plan, trace_id: str
+    ) -> None:
+        for node_id in plan.quarantine_nodes:
+            recovery_event = self.recovery_agent.build_recovery_event(
+                node_id, trace_id
+            )
+            if recovery_event is not None:
+                await self.bus.emit(recovery_event)
 
     @staticmethod
     def _fallback_vote(defender_id: str, error: str) -> DefenderVerdict:
