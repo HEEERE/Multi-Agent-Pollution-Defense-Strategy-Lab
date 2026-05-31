@@ -17,6 +17,17 @@ from app.schemas import (
     new_id,
 )
 
+_ACTION_TAKEN_MAP: dict[str, ActionTaken] = {
+    "allow": ActionTaken.NONE,
+    "alert": ActionTaken.ALERT,
+    "challenge": ActionTaken.CHALLENGE,
+    "quarantine": ActionTaken.QUARANTINE,
+    "block": ActionTaken.BLOCK,
+    "isolate": ActionTaken.ISOLATE,
+    "decoy": ActionTaken.DECOY,
+    "recover": ActionTaken.RECOVER,
+}
+
 
 class DefenseCoordinator:
     def __init__(
@@ -82,13 +93,13 @@ class DefenseCoordinator:
         if decision.containment_plan is not None and self.containment_registry is not None:
             self.containment_registry.apply_plan(decision.containment_plan)
 
-            # Schedule recovery checks for quarantined nodes
+            # Emit recovery_required notification (manual approval required)
             if (
                 decision.containment_plan.recovery_required
                 and self.recovery_agent is not None
                 and self.bus is not None
             ):
-                await self._check_recovery(decision.containment_plan, event.trace_id)
+                await self._emit_recovery_required(decision)
 
         if self.bus is not None:
             await self._emit_joint_decision(decision)
@@ -205,7 +216,7 @@ class DefenseCoordinator:
             target_node="Dashboard",
             payload_snippet=decision.rationale[:500],
             status=EventStatus.SAFE,
-            action_taken=ActionTaken.ALERT if decision.final_action != "allow" else ActionTaken.NONE,
+            action_taken=_ACTION_TAKEN_MAP.get(decision.final_action, ActionTaken.ALERT),
             severity=EventSeverity.WARNING if decision.final_action != "allow" else EventSeverity.INFO,
             monitor_level=MonitorLevel.LLM_INTENT,
             metadata={
@@ -215,15 +226,28 @@ class DefenseCoordinator:
         )
         await self.bus.emit(event)
 
-    async def _check_recovery(
-        self, plan, trace_id: str
-    ) -> None:
-        for node_id in plan.quarantine_nodes:
-            recovery_event = self.recovery_agent.build_recovery_event(
-                node_id, trace_id
-            )
-            if recovery_event is not None:
-                await self.bus.emit(recovery_event)
+    async def _emit_recovery_required(self, decision: JointDefenseDecision) -> None:
+        plan = decision.containment_plan
+        event = AgentEvent(
+            trace_id=decision.trace_id,
+            parent_event_id=decision.source_event_id,
+            event_type=EventType.RECOVERY,
+            source_node="DefenseCoordinator",
+            target_node="Dashboard",
+            payload_snippet=(
+                f"Recovery required for nodes: {', '.join(sorted(plan.quarantine_nodes))}"
+            )[:500],
+            status=EventStatus.QUARANTINED,
+            action_taken=ActionTaken.NONE,
+            severity=EventSeverity.WARNING,
+            monitor_level=MonitorLevel.LLM_INTENT,
+            metadata={
+                "source_event_id": decision.source_event_id,
+                "quarantine_nodes": sorted(plan.quarantine_nodes),
+                "recovery_required": True,
+            },
+        )
+        await self.bus.emit(event)
 
     @staticmethod
     def _fallback_vote(defender_id: str, error: str) -> DefenderVerdict:

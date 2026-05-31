@@ -29,6 +29,16 @@ backend/app/data/
 # Logs
 *.log
 
+# Coverage
+htmlcov/
+.coverage
+.coverage.*
+
+# Build
+dist/
+build/
+*.egg-info/
+
 # OS
 .DS_Store
 Thumbs.db

@@ -228,7 +228,7 @@ Set `LLM_ENABLED=false` in `backend/.env` — no API key required. All detectors
 - **Policy Engine** — Rule-based action decisions wired into runtime pipeline; actively enforces block/isolate/quarantine by updating `action_taken` and `status` on events, not just audit
 - **Contamination Analysis** — Propagation depth, blast radius, time-to-detection, recovery success, persistence metrics
 - **Runtime Settings** — Per-detector enable/disable (regex, semantic, llm_intent), threshold tuning, and LLM config changes trigger live pipeline rebuild with fresh LLM client (no restart required); reset restores factory defaults and rebuilds pipeline
-- **Test Suite** — 87 tests: 23 API-level route tests + 64 unit/integration tests (10 consensus, 12 containment, 7 defense coordinator, 6 pipeline joint defense, 6 policy engine, 5 trace graph, 5 contamination, 5 event store migration, 11 contract)
+- **Test Suite** — 90 tests: 23 API-level route tests + 67 unit/integration tests (10 consensus, 12 containment, 7 defense coordinator, 6 pipeline joint defense, 6 policy engine, 5 trace graph, 5 contamination, 5 event store migration, 11 contract)
 
 ## TraceGraph & Contamination Analysis
 
