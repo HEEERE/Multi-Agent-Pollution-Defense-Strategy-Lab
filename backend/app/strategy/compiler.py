@@ -55,6 +55,11 @@ def compile_strategy(
         for inj in topology.get("injections", [])
     ]
 
+    topology_metadata = dict(topology.get("metadata", {}))
+    topology_metadata["run_id"] = run_id
+    topology_metadata["strategy_id"] = strategy_id
+    topology_metadata["strategy_version"] = strategy_version
+
     topology_config = TopologyConfig(
         name=topology.get("name", content.get("name", "unnamed-strategy")),
         nodes=nodes,
@@ -62,13 +67,13 @@ def compile_strategy(
         monitors=monitors,
         injections=injections,
         max_turns=topology.get("max_turns", 5),
-        metadata=topology.get("metadata", {}),
+        metadata=topology_metadata,
     )
 
     detector_settings = content.get("detector_settings", {})
     detector_pipeline = _build_detector_pipeline(detector_settings)
 
-    metadata = content.get("metadata", {})
+    metadata = dict(content.get("metadata", {}))
     metadata["run_id"] = run_id
     metadata["strategy_id"] = strategy_id
     metadata["strategy_version"] = strategy_version

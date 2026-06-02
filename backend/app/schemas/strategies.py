@@ -1,4 +1,4 @@
-from typing import Any
+from typing import Any, Literal
 
 from pydantic import BaseModel, Field
 
@@ -10,7 +10,7 @@ class StrategyValidateRequest(BaseModel):
 class StrategyCreate(BaseModel):
     name: str = Field(min_length=1, max_length=100)
     description: str = ""
-    format: str = "json"
+    format: Literal["json", "yaml"] = "json"
     content: dict[str, Any]
     tags: list[str] = Field(default_factory=list)
 

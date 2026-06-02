@@ -69,14 +69,28 @@ def validate_strategy(content: dict) -> StrategyValidationResult:
     for i, edge in enumerate(edges):
         src = edge.get("source")
         tgt = edge.get("target")
-        if src and src not in node_set:
+        if not src:
+            issues.append(
+                StrategyValidationIssue(
+                    path=f"topology.edges[{i}].source",
+                    message="source is required",
+                )
+            )
+        elif src not in node_set:
             issues.append(
                 StrategyValidationIssue(
                     path=f"topology.edges[{i}].source",
                     message=f"source node '{src}' does not exist",
                 )
             )
-        if tgt and tgt not in node_set:
+        if not tgt:
+            issues.append(
+                StrategyValidationIssue(
+                    path=f"topology.edges[{i}].target",
+                    message="target is required",
+                )
+            )
+        elif tgt not in node_set:
             issues.append(
                 StrategyValidationIssue(
                     path=f"topology.edges[{i}].target",
@@ -87,7 +101,14 @@ def validate_strategy(content: dict) -> StrategyValidationResult:
     injections = topology.get("injections", [])
     for i, inj in enumerate(injections):
         inj_type = inj.get("injection_type")
-        if inj_type and inj_type not in VALID_INJECTION_TYPES:
+        if not inj_type:
+            issues.append(
+                StrategyValidationIssue(
+                    path=f"topology.injections[{i}].injection_type",
+                    message="injection_type is required",
+                )
+            )
+        elif inj_type not in VALID_INJECTION_TYPES:
             issues.append(
                 StrategyValidationIssue(
                     path=f"topology.injections[{i}].injection_type",
@@ -95,7 +116,14 @@ def validate_strategy(content: dict) -> StrategyValidationResult:
                 )
             )
         src_node = inj.get("source_node")
-        if src_node and src_node not in node_set:
+        if not src_node:
+            issues.append(
+                StrategyValidationIssue(
+                    path=f"topology.injections[{i}].source_node",
+                    message="source_node is required",
+                )
+            )
+        elif src_node not in node_set:
             issues.append(
                 StrategyValidationIssue(
                     path=f"topology.injections[{i}].source_node",
@@ -103,7 +131,14 @@ def validate_strategy(content: dict) -> StrategyValidationResult:
                 )
             )
         tgt_node = inj.get("target_node")
-        if tgt_node and tgt_node not in node_set:
+        if not tgt_node:
+            issues.append(
+                StrategyValidationIssue(
+                    path=f"topology.injections[{i}].target_node",
+                    message="target_node is required",
+                )
+            )
+        elif tgt_node not in node_set:
             issues.append(
                 StrategyValidationIssue(
                     path=f"topology.injections[{i}].target_node",
@@ -140,10 +175,24 @@ def validate_strategy(content: dict) -> StrategyValidationResult:
         policy_ids: list[str] = []
         for i, policy in enumerate(policies):
             pid = policy.get("policy_id")
-            if pid:
+            if not pid:
+                issues.append(
+                    StrategyValidationIssue(
+                        path=f"policies[{i}].policy_id",
+                        message="policy_id is required",
+                    )
+                )
+            else:
                 policy_ids.append(pid)
             action = policy.get("action")
-            if action and action not in VALID_ACTIONS:
+            if not action:
+                issues.append(
+                    StrategyValidationIssue(
+                        path=f"policies[{i}].action",
+                        message="action is required",
+                    )
+                )
+            elif action not in VALID_ACTIONS:
                 issues.append(
                     StrategyValidationIssue(
                         path=f"policies[{i}].action",

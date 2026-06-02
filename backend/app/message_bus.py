@@ -11,10 +11,23 @@ BroadcastHook = Callable[[AgentEvent], Awaitable[None]]
 
 _current_trace_id: ContextVar[str | None] = ContextVar("trace_id", default=None)
 _pending_events: ContextVar[list[AgentEvent] | None] = ContextVar("pending_events", default=None)
+_current_run_id: ContextVar[str | None] = ContextVar("run_id", default=None)
 
 
 def get_current_trace_id() -> str | None:
     return _current_trace_id.get()
+
+
+def get_current_run_id() -> str | None:
+    return _current_run_id.get()
+
+
+def set_run_context(run_id: str | None) -> None:
+    _current_run_id.set(run_id)
+
+
+def clear_run_context() -> None:
+    _current_run_id.set(None)
 
 
 def set_trace_context(trace_id: str) -> None:
@@ -87,6 +100,17 @@ class MessageBus:
         trace_id = get_current_trace_id()
         if trace_id and event.trace_id != trace_id:
             event = event.model_copy(update={"trace_id": trace_id})
+
+        run_id_from_ctx = get_current_run_id()
+        if run_id_from_ctx:
+            event = event.model_copy(
+                update={
+                    "metadata": {
+                        **event.metadata,
+                        "run_id": run_id_from_ctx,
+                    }
+                }
+            )
 
         inspected_event: AgentEvent | None = event
 
@@ -176,6 +200,17 @@ class MessageBus:
         trace_id = get_current_trace_id()
         if trace_id and event.trace_id != trace_id:
             event = event.model_copy(update={"trace_id": trace_id})
+
+        run_id_from_ctx = get_current_run_id()
+        if run_id_from_ctx:
+            event = event.model_copy(
+                update={
+                    "metadata": {
+                        **event.metadata,
+                        "run_id": run_id_from_ctx,
+                    }
+                }
+            )
 
         self.history.append(event)
         collect_event(event)

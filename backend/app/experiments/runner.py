@@ -6,7 +6,7 @@ from app.event_store import EventStore
 from app.experiments.metrics import MetricsComputer
 from app.llm.factory import get_llm_client
 from app.llm.base import LLMClient
-from app.message_bus import MessageBus
+from app.message_bus import MessageBus, clear_run_context, set_run_context
 from app.schemas import (
     AgentEvent,
     ExperimentConfig,
@@ -55,6 +55,11 @@ class ExperimentRunner:
                 pipeline = create_pipeline(config.detector_pipeline, self.llm_client, bus)
                 bus.attach_monitor(pipeline.inspect)
 
+            # Enter run context so all events automatically carry run_id
+            run_id = config.metadata.get("run_id") if config.metadata else None
+            if run_id:
+                set_run_context(run_id)
+
             # Run simulation
             engine = SimulationEngine(bus, self.llm_client)
             events = await engine.run_experiment(config)
@@ -75,6 +80,9 @@ class ExperimentRunner:
             run.status = ExperimentStatus.FAILED
             run.error_message = str(exc)
             run.completed_at = time()
+
+        finally:
+            clear_run_context()
 
         # Store result
         await self.event_store.store_experiment({
