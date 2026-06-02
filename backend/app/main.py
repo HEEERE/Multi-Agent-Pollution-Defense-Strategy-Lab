@@ -11,7 +11,9 @@ from app.api.routes import (
     playbooks,
     policies,
     replay,
+    runs,
     settings,
+    strategies,
     tasks,
     traces,
     websocket,
@@ -45,6 +47,8 @@ def create_app() -> FastAPI:
     app.include_router(policies.router, prefix="/api/v1/policies", tags=["policies"])
     app.include_router(playbooks.router, prefix="/api/v1/playbooks", tags=["playbooks"])
     app.include_router(experiments.router, prefix="/api/v1/experiments", tags=["experiments"])
+    app.include_router(strategies.router, prefix="/api/v1/strategies", tags=["strategies"])
+    app.include_router(runs.router, prefix="/api/v1/runs", tags=["runs"])
     app.include_router(replay.router, prefix="/api/v1/replay", tags=["replay"])
     app.include_router(benchmark.router, prefix="/api/v1/benchmark", tags=["benchmark"])
     app.include_router(honeypot.router, prefix="/api/v1/honeypot", tags=["honeypot"])

@@ -49,6 +49,60 @@ CREATE TABLE IF NOT EXISTS benchmark_reports (
 );
 """
 
+CREATE_STRATEGIES_TABLE = """
+CREATE TABLE IF NOT EXISTS strategies (
+    strategy_id TEXT PRIMARY KEY,
+    name TEXT NOT NULL,
+    description TEXT NOT NULL DEFAULT '',
+    format TEXT NOT NULL DEFAULT 'json',
+    content_json TEXT NOT NULL DEFAULT '{}',
+    tags_json TEXT NOT NULL DEFAULT '[]',
+    version INTEGER NOT NULL DEFAULT 1,
+    created_at REAL NOT NULL DEFAULT (unixepoch()),
+    updated_at REAL NOT NULL DEFAULT (unixepoch())
+);
+"""
+
+CREATE_STRATEGY_VERSIONS_TABLE = """
+CREATE TABLE IF NOT EXISTS strategy_versions (
+    version_id TEXT PRIMARY KEY,
+    strategy_id TEXT NOT NULL,
+    version INTEGER NOT NULL,
+    content_json TEXT NOT NULL DEFAULT '{}',
+    created_at REAL NOT NULL DEFAULT (unixepoch()),
+    FOREIGN KEY (strategy_id) REFERENCES strategies(strategy_id) ON DELETE CASCADE
+);
+"""
+
+CREATE_RUNS_TABLE = """
+CREATE TABLE IF NOT EXISTS runs (
+    run_id TEXT PRIMARY KEY,
+    strategy_id TEXT,
+    strategy_version INTEGER,
+    experiment_id TEXT,
+    trace_id TEXT,
+    status TEXT NOT NULL DEFAULT 'queued',
+    error TEXT,
+    metrics_json TEXT,
+    created_at REAL NOT NULL DEFAULT (unixepoch()),
+    started_at REAL,
+    finished_at REAL,
+    FOREIGN KEY (strategy_id) REFERENCES strategies(strategy_id) ON DELETE SET NULL
+);
+"""
+
+CREATE_RUN_EVENTS_TABLE = """
+CREATE TABLE IF NOT EXISTS run_events (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    run_id TEXT NOT NULL,
+    event_id TEXT NOT NULL,
+    trace_id TEXT,
+    event_json TEXT NOT NULL DEFAULT '{}',
+    created_at REAL NOT NULL DEFAULT (unixepoch()),
+    FOREIGN KEY (run_id) REFERENCES runs(run_id) ON DELETE CASCADE
+);
+"""
+
 INDEXES = [
     "CREATE INDEX IF NOT EXISTS idx_events_trace_id ON events(trace_id);",
     "CREATE INDEX IF NOT EXISTS idx_events_timestamp ON events(timestamp);",
@@ -57,6 +111,11 @@ INDEXES = [
     "CREATE INDEX IF NOT EXISTS idx_events_event_type ON events(event_type);",
     "CREATE INDEX IF NOT EXISTS idx_experiments_status ON experiments(status);",
     "CREATE INDEX IF NOT EXISTS idx_experiments_started_at ON experiments(started_at);",
+    "CREATE INDEX IF NOT EXISTS idx_strategies_updated ON strategies(updated_at);",
+    "CREATE INDEX IF NOT EXISTS idx_strategy_versions_strategy_id ON strategy_versions(strategy_id);",
+    "CREATE INDEX IF NOT EXISTS idx_runs_strategy_id ON runs(strategy_id);",
+    "CREATE INDEX IF NOT EXISTS idx_runs_status ON runs(status);",
+    "CREATE INDEX IF NOT EXISTS idx_run_events_run_id ON run_events(run_id);",
 ]
 
 
@@ -161,6 +220,10 @@ class EventStore:
             await self._conn.execute(CREATE_EVENTS_TABLE)
             await self._conn.execute(CREATE_EXPERIMENTS_TABLE)
             await self._conn.execute(CREATE_BENCHMARK_TABLE)
+            await self._conn.execute(CREATE_STRATEGIES_TABLE)
+            await self._conn.execute(CREATE_STRATEGY_VERSIONS_TABLE)
+            await self._conn.execute(CREATE_RUNS_TABLE)
+            await self._conn.execute(CREATE_RUN_EVENTS_TABLE)
             for col_name, col_ddl in MIGRATION_COLUMNS:
                 await _ensure_column(self._conn, "events", col_name, col_ddl)
             for idx in INDEXES:
@@ -378,6 +441,180 @@ class EventStore:
         )
         row = await cursor.fetchone()
         return _json.loads(row["report_json"]) if row else None
+
+    # ── Strategy persistence ────────────────────────────────────
+
+    async def store_strategy(self, strategy: dict) -> None:
+        conn = await self._get_conn()
+        await conn.execute(
+            """INSERT OR REPLACE INTO strategies
+               (strategy_id, name, description, format, content_json,
+                tags_json, version, created_at, updated_at)
+               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+            (
+                strategy["strategy_id"],
+                strategy["name"],
+                strategy.get("description", ""),
+                strategy.get("format", "json"),
+                strategy["content_json"],
+                strategy.get("tags_json", "[]"),
+                strategy.get("version", 1),
+                strategy["created_at"],
+                strategy["updated_at"],
+            ),
+        )
+        await conn.commit()
+
+    async def get_strategy(self, strategy_id: str) -> dict | None:
+        conn = await self._get_conn()
+        cursor = await conn.execute(
+            "SELECT * FROM strategies WHERE strategy_id = ?", (strategy_id,)
+        )
+        row = await cursor.fetchone()
+        return dict(row) if row else None
+
+    async def list_strategies(
+        self, limit: int = 50, offset: int = 0
+    ) -> list[dict]:
+        conn = await self._get_conn()
+        cursor = await conn.execute(
+            "SELECT * FROM strategies ORDER BY updated_at DESC LIMIT ? OFFSET ?",
+            (limit, offset),
+        )
+        return [dict(row) for row in await cursor.fetchall()]
+
+    async def delete_strategy(self, strategy_id: str) -> int:
+        conn = await self._get_conn()
+        cursor = await conn.execute(
+            "DELETE FROM strategies WHERE strategy_id = ?", (strategy_id,)
+        )
+        await conn.commit()
+        return cursor.rowcount
+
+    async def update_strategy(self, strategy_id: str, updates: dict) -> None:
+        conn = await self._get_conn()
+        sets = ", ".join(f"{k} = ?" for k in updates)
+        values = list(updates.values()) + [strategy_id]
+        await conn.execute(
+            f"UPDATE strategies SET {sets} WHERE strategy_id = ?", values
+        )
+        await conn.commit()
+
+    # ── Strategy version persistence ────────────────────────────
+
+    async def store_strategy_version(self, version: dict) -> None:
+        conn = await self._get_conn()
+        await conn.execute(
+            """INSERT OR REPLACE INTO strategy_versions
+               (version_id, strategy_id, version, content_json, created_at)
+               VALUES (?, ?, ?, ?, ?)""",
+            (
+                version["version_id"],
+                version["strategy_id"],
+                version["version"],
+                version["content_json"],
+                version["created_at"],
+            ),
+        )
+        await conn.commit()
+
+    async def get_strategy_versions(self, strategy_id: str) -> list[dict]:
+        conn = await self._get_conn()
+        cursor = await conn.execute(
+            "SELECT * FROM strategy_versions WHERE strategy_id = ? ORDER BY version DESC",
+            (strategy_id,),
+        )
+        return [dict(row) for row in await cursor.fetchall()]
+
+    # ── Run persistence ────────────────────────────────────
+
+    async def store_run(self, run: dict) -> None:
+        conn = await self._get_conn()
+        await conn.execute(
+            """INSERT OR REPLACE INTO runs
+               (run_id, strategy_id, strategy_version, experiment_id,
+                trace_id, status, error, metrics_json,
+                created_at, started_at, finished_at)
+               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+            (
+                run["run_id"],
+                run.get("strategy_id"),
+                run.get("strategy_version"),
+                run.get("experiment_id"),
+                run.get("trace_id"),
+                run.get("status", "queued"),
+                run.get("error"),
+                run.get("metrics_json"),
+                run.get("created_at"),
+                run.get("started_at"),
+                run.get("finished_at"),
+            ),
+        )
+        await conn.commit()
+
+    async def get_run(self, run_id: str) -> dict | None:
+        conn = await self._get_conn()
+        cursor = await conn.execute(
+            "SELECT * FROM runs WHERE run_id = ?", (run_id,)
+        )
+        row = await cursor.fetchone()
+        return dict(row) if row else None
+
+    async def list_runs(
+        self,
+        strategy_id: str | None = None,
+        limit: int = 50,
+        offset: int = 0,
+    ) -> list[dict]:
+        conn = await self._get_conn()
+        if strategy_id:
+            cursor = await conn.execute(
+                "SELECT * FROM runs WHERE strategy_id = ? ORDER BY created_at DESC LIMIT ? OFFSET ?",
+                (strategy_id, limit, offset),
+            )
+        else:
+            cursor = await conn.execute(
+                "SELECT * FROM runs ORDER BY created_at DESC LIMIT ? OFFSET ?",
+                (limit, offset),
+            )
+        return [dict(row) for row in await cursor.fetchall()]
+
+    async def update_run(self, run_id: str, updates: dict) -> None:
+        conn = await self._get_conn()
+        sets = ", ".join(f"{k} = ?" for k in updates)
+        values = list(updates.values()) + [run_id]
+        await conn.execute(
+            f"UPDATE runs SET {sets} WHERE run_id = ?", values
+        )
+        await conn.commit()
+
+    # ── Run event persistence ────────────────────────────────────
+
+    async def store_run_event(self, run_event: dict) -> None:
+        conn = await self._get_conn()
+        await conn.execute(
+            """INSERT OR REPLACE INTO run_events
+               (run_id, event_id, trace_id, event_json, created_at)
+               VALUES (?, ?, ?, ?, ?)""",
+            (
+                run_event["run_id"],
+                run_event["event_id"],
+                run_event.get("trace_id"),
+                run_event.get("event_json", "{}"),
+                run_event.get("created_at"),
+            ),
+        )
+        await conn.commit()
+
+    async def get_run_events(
+        self, run_id: str, limit: int = 200, offset: int = 0
+    ) -> list[dict]:
+        conn = await self._get_conn()
+        cursor = await conn.execute(
+            "SELECT * FROM run_events WHERE run_id = ? ORDER BY created_at ASC LIMIT ? OFFSET ?",
+            (run_id, limit, offset),
+        )
+        return [dict(row) for row in await cursor.fetchall()]
 
 
 _event_store: EventStore | None = None

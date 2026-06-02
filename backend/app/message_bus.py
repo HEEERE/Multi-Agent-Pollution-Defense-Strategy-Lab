@@ -1,6 +1,7 @@
 from collections import deque
 from collections.abc import Awaitable, Callable
 from contextvars import ContextVar
+from time import time
 
 from app.schemas import ActionTaken, AgentEvent, EventSeverity, EventStatus
 
@@ -124,7 +125,37 @@ class MessageBus:
             except Exception:
                 pass
 
+        # Per-run linking: if event carries a run_id, link it and
+        # broadcast to the run-specific WebSocket room.
+        run_id = (
+            inspected_event.metadata.get("run_id")
+            if inspected_event.metadata
+            else None
+        )
+        if run_id and self._event_store is not None:
+            try:
+                await self._event_store.store_run_event(
+                    {
+                        "run_id": run_id,
+                        "event_id": inspected_event.event_id,
+                        "trace_id": inspected_event.trace_id,
+                        "event_json": inspected_event.model_dump_json(
+                            exclude_none=True
+                        ),
+                        "created_at": time(),
+                    }
+                )
+            except Exception:
+                pass
+
         await self._broadcast(inspected_event)
+
+        if run_id:
+            from app.websocket_manager import websocket_manager
+
+            await websocket_manager.broadcast(
+                inspected_event, room_id=str(run_id)
+            )
 
         if inspected_event.action_taken in (ActionTaken.BLOCK, ActionTaken.ISOLATE):
             return inspected_event
@@ -155,7 +186,34 @@ class MessageBus:
             except Exception:
                 pass
 
+        run_id = (
+            event.metadata.get("run_id") if event.metadata else None
+        )
+        if run_id and self._event_store is not None:
+            try:
+                await self._event_store.store_run_event(
+                    {
+                        "run_id": run_id,
+                        "event_id": event.event_id,
+                        "trace_id": event.trace_id,
+                        "event_json": event.model_dump_json(
+                            exclude_none=True
+                        ),
+                        "created_at": time(),
+                    }
+                )
+            except Exception:
+                pass
+
         await self._broadcast(event)
+
+        if run_id:
+            from app.websocket_manager import websocket_manager
+
+            await websocket_manager.broadcast(
+                event, room_id=str(run_id)
+            )
+
         return event
 
     async def _broadcast(self, event: AgentEvent) -> None:

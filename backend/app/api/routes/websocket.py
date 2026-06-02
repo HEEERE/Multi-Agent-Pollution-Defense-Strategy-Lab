@@ -29,3 +29,13 @@ async def events_websocket(websocket: WebSocket) -> None:
             await websocket.receive_text()
     except WebSocketDisconnect:
         websocket_manager.disconnect(websocket)
+
+
+@router.websocket("/ws/runs/{run_id}")
+async def run_events_websocket(websocket: WebSocket, run_id: str) -> None:
+    await websocket_manager.connect(websocket, room_id=run_id)
+    try:
+        while True:
+            await websocket.receive_text()
+    except WebSocketDisconnect:
+        websocket_manager.disconnect(websocket, room_id=run_id)
