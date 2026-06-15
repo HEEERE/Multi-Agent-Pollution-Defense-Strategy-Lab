@@ -11,7 +11,7 @@ class Settings(BaseSettings):
         default="https://token-plan-cn.xiaomimimo.com/v1",
         validation_alias="MIMO_BASE_URL",
     )
-    mimo_model: str = Field(default="MiMo-V2.5-Pro", validation_alias="MIMO_MODEL")
+    mimo_model: str = Field(default="mimo-v2.5-pro", validation_alias="MIMO_MODEL")
     llm_request_timeout_seconds: float = Field(default=45, validation_alias="LLM_REQUEST_TIMEOUT_SECONDS")
     llm_max_tokens: int = Field(default=700, validation_alias="LLM_MAX_TOKENS")
     llm_temperature: float = Field(default=0.2, validation_alias="LLM_TEMPERATURE")

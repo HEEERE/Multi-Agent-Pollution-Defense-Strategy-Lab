@@ -1,4 +1,7 @@
 import os
+import re
+from difflib import SequenceMatcher
+from pathlib import Path
 from typing import Any
 
 _ATTACK_SAMPLES: list[tuple[str, str, str]] = [
@@ -78,29 +81,127 @@ class ChromaVectorStore:
         self._client = None
         self._collection = None
         self._ef = None
+        self._local_mode = False
+        self._local_samples = list(_ATTACK_SAMPLES)
+
+    @staticmethod
+    def _model_cache_ready() -> bool:
+        cache_root = Path(
+            os.environ.get(
+                "CHROMA_MODEL_CACHE",
+                Path.home() / ".cache" / "chroma" / "onnx_models" / "all-MiniLM-L6-v2",
+            )
+        )
+        return any(
+            path.stat().st_size > 0
+            for path in cache_root.rglob("*.onnx")
+            if path.is_file()
+        )
+
+    @staticmethod
+    def _allow_model_download() -> bool:
+        return os.environ.get("CHROMA_ALLOW_MODEL_DOWNLOAD", "false").lower() in {
+            "1",
+            "true",
+            "yes",
+            "on",
+        }
+
+    @staticmethod
+    def _tokens(text: str) -> list[str]:
+        return re.findall(r"[a-z0-9_]+", text.lower())
+
+    @classmethod
+    def _local_similarity(cls, query: str, sample: str) -> float:
+        query_tokens = cls._tokens(query)
+        sample_tokens = cls._tokens(sample)
+        if not query_tokens or not sample_tokens:
+            return 0.0
+
+        query_set = set(query_tokens)
+        sample_set = set(sample_tokens)
+        intersection = len(query_set & sample_set)
+        union = len(query_set | sample_set)
+        token_jaccard = intersection / union if union else 0.0
+        token_coverage = intersection / min(len(query_set), len(sample_set))
+        distinctive_overlap = token_coverage * min(1.0, intersection / 6)
+
+        query_bigrams = set(zip(query_tokens, query_tokens[1:]))
+        sample_bigrams = set(zip(sample_tokens, sample_tokens[1:]))
+        bigram_union = len(query_bigrams | sample_bigrams)
+        bigram_jaccard = (
+            len(query_bigrams & sample_bigrams) / bigram_union
+            if bigram_union
+            else 0.0
+        )
+        sequence_score = SequenceMatcher(
+            None,
+            " ".join(query_tokens),
+            " ".join(sample_tokens),
+        ).ratio()
+
+        return min(
+            1.0,
+            max(
+                sequence_score,
+                distinctive_overlap,
+                0.45 * token_coverage
+                + 0.35 * token_jaccard
+                + 0.20 * bigram_jaccard,
+            ),
+        )
+
+    def _query_local(self, query: str, top_k: int) -> list[dict[str, Any]]:
+        ranked = sorted(
+            (
+                {
+                    "id": f"local_attack_{index:03d}",
+                    "text": text,
+                    "similarity_score": round(self._local_similarity(query, text), 4),
+                    "metadata": {
+                        "injection_type": injection_type,
+                        "description": description,
+                        "embedding_backend": "local_fallback",
+                    },
+                }
+                for index, (text, injection_type, description) in enumerate(
+                    self._local_samples
+                )
+            ),
+            key=lambda item: item["similarity_score"],
+            reverse=True,
+        )
+        return ranked[:top_k]
 
     def _ensure_initialized(self) -> None:
-        if self._collection is not None:
+        if self._collection is not None or self._local_mode:
+            return
+        if not self._model_cache_ready() and not self._allow_model_download():
+            self._local_mode = True
             return
         try:
             import chromadb
             from chromadb.utils import embedding_functions
         except ImportError:
-            raise ImportError(
-                "chromadb is required for semantic detection. "
-                "Install with: pip install chromadb"
+            self._local_mode = True
+            return
+
+        try:
+            self._client = chromadb.PersistentClient(path=self._persist_dir)
+            self._ef = embedding_functions.DefaultEmbeddingFunction()
+            self._collection = self._client.get_or_create_collection(
+                name=self._collection_name,
+                embedding_function=self._ef,
+                metadata={"hnsw:space": "cosine"},
             )
 
-        self._client = chromadb.PersistentClient(path=self._persist_dir)
-        self._ef = embedding_functions.DefaultEmbeddingFunction()
-        self._collection = self._client.get_or_create_collection(
-            name=self._collection_name,
-            embedding_function=self._ef,
-            metadata={"hnsw:space": "cosine"},
-        )
-
-        if self._collection.count() == 0:
-            self._seed()
+            if self._collection.count() == 0:
+                self._seed()
+        except Exception:
+            self._client = None
+            self._collection = None
+            self._ef = None
+            self._local_mode = True
 
     def _seed(self) -> None:
         texts, metadatas, ids_ = [], [], []
@@ -114,12 +215,24 @@ class ChromaVectorStore:
         self, texts: list[str], metadatas: list[dict[str, Any]]
     ) -> None:
         self._ensure_initialized()
+        if self._local_mode:
+            for text, metadata in zip(texts, metadatas, strict=False):
+                self._local_samples.append(
+                    (
+                        text,
+                        str(metadata.get("injection_type", "unknown")),
+                        str(metadata.get("description", "Custom attack sample")),
+                    )
+                )
+            return
         start_idx = self._collection.count()
         ids_ = [f"attack_{start_idx + i:03d}" for i in range(len(texts))]
         self._collection.add(documents=texts, metadatas=metadatas, ids=ids_)
 
     def query_similar(self, query: str, top_k: int = 5) -> list[dict[str, Any]]:
         self._ensure_initialized()
+        if self._local_mode:
+            return self._query_local(query, top_k)
         results = self._collection.query(query_texts=[query], n_results=top_k)
         items: list[dict[str, Any]] = []
         if not results["ids"] or not results["ids"][0]:
@@ -137,6 +250,8 @@ class ChromaVectorStore:
 
     def count(self) -> int:
         self._ensure_initialized()
+        if self._local_mode:
+            return len(self._local_samples)
         return self._collection.count()
 
 

@@ -1,0 +1,127 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  color-scheme: dark;
+  font-family: Inter, "Noto Sans SC", "Microsoft YaHei UI", sans-serif;
+  color: #d9e7f0;
+  background: #030a11;
+  font-synthesis: none;
+  text-rendering: optimizeLegibility;
+  -webkit-font-smoothing: antialiased;
+  --sidebar-width: 184px;
+  --topbar-height: 64px;
+}
+
+* {
+  box-sizing: border-box;
+  scrollbar-width: thin;
+  scrollbar-color: #1e455b #06111b;
+}
+
+html,
+body,
+#root {
+  min-width: 320px;
+  min-height: 100%;
+  margin: 0;
+}
+
+body {
+  min-height: 100vh;
+  overflow: hidden;
+  background:
+    radial-gradient(circle at 70% 0%, rgba(0, 174, 234, 0.08), transparent 28%),
+    #030a11;
+}
+
+button,
+input,
+textarea,
+select {
+  font: inherit;
+}
+
+button {
+  cursor: pointer;
+}
+
+@layer components {
+  .panel {
+    @apply rounded-xl border border-slate-700/60 bg-ink-850/90 shadow-panel;
+  }
+
+  .panel-header {
+    @apply flex min-h-12 items-center justify-between border-b border-slate-700/60 px-4;
+  }
+
+  .section-title {
+    @apply text-sm font-semibold tracking-wide text-slate-100;
+  }
+
+  .muted {
+    @apply text-xs text-slate-400;
+  }
+
+  .input {
+    @apply h-10 w-full rounded-lg border border-slate-700 bg-ink-900 px-3 text-sm text-slate-100 outline-none transition placeholder:text-slate-500 focus:border-cyan-450 focus:ring-2 focus:ring-cyan-450/10;
+  }
+
+  .textarea {
+    @apply input min-h-24 resize-y py-2;
+  }
+
+  .btn {
+    @apply inline-flex h-9 items-center justify-center gap-2 rounded-lg border border-slate-700 bg-ink-800 px-3 text-sm font-medium text-slate-200 transition hover:border-slate-500 hover:bg-slate-800 disabled:cursor-not-allowed disabled:opacity-50;
+  }
+
+  .btn-primary {
+    @apply btn border-cyan-450 bg-cyan-450 text-ink-950 shadow-glow hover:border-cyan-350 hover:bg-cyan-350;
+  }
+
+  .btn-danger {
+    @apply btn border-red-500/50 text-red-300 hover:bg-red-500/10;
+  }
+
+  .tab {
+    @apply border-b-2 border-transparent px-3 py-3 text-sm text-slate-400 transition hover:text-slate-200;
+  }
+
+  .tab-active {
+    @apply border-cyan-450 text-cyan-350;
+  }
+
+  .code-surface {
+    @apply rounded-lg border border-slate-700/60 bg-[#06101a] font-mono text-xs text-slate-300;
+  }
+}
+
+.react-flow__controls {
+  overflow: hidden;
+  border: 1px solid #284052;
+  border-radius: 8px;
+  box-shadow: none;
+}
+
+.react-flow__controls-button {
+  border-color: #284052;
+  background: #0c1d2a;
+  fill: #b9cfdd;
+}
+
+.react-flow__controls-button:hover {
+  background: #143044;
+}
+
+.react-flow__minimap {
+  border: 1px solid #284052;
+  border-radius: 8px;
+  background: #06111b;
+}
+
+.monaco-editor,
+.monaco-editor-background,
+.monaco-editor .margin {
+  background-color: #06101a !important;
+}

@@ -7,8 +7,11 @@ __pycache__/
 .ruff_cache/
 *.egg-info/
 
-# Environment
+# Environment and secrets
 .env
+.env.*
+!.env.example
+!*.env.example
 
 # Database (runtime-generated)
 *.db
@@ -22,9 +25,10 @@ backend/app/data/
 .vscode/
 .idea/
 
-# Claude Code local config
+# Local agent and editor config
 .claude/
 .claude/worktrees/
+/frontend/AGENTS.md
 
 # Logs
 *.log
@@ -34,10 +38,17 @@ htmlcov/
 .coverage
 .coverage.*
 
-# Build
+# Frontend and build output
 dist/
 build/
-*.egg-info/
+node_modules/
+.npm-cache/
+.vite/
+*.tsbuildinfo
+
+# Local product QA output
+/artifacts/
+/design-qa.md
 
 # OS
 .DS_Store

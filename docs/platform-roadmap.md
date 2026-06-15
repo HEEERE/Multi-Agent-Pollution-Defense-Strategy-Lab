@@ -13,7 +13,7 @@ The project is evolving from a hackathon visualization into a research and produ
 2. LLM provider abstraction
    - Current provider: MiMo OpenAI-compatible API.
    - Base URL: `https://token-plan-cn.xiaomimimo.com/v1`.
-   - Model: `MiMo-V2.5-Pro`.
+   - Model: `mimo-v2.5-pro`.
    - API keys are loaded from environment variables only.
 
 3. Research workflow
@@ -35,7 +35,7 @@ Create `backend/.env` from `backend/.env.example`:
 ```text
 MIMO_API_KEY=replace-with-your-mimo-api-key
 MIMO_BASE_URL=https://token-plan-cn.xiaomimimo.com/v1
-MIMO_MODEL=MiMo-V2.5-Pro
+MIMO_MODEL=mimo-v2.5-pro
 LLM_ENABLED=true
 ```
 

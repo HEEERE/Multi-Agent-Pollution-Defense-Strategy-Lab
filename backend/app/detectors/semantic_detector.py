@@ -5,6 +5,7 @@ Automatically tunes per-category thresholds based on observed precision/recall
 in a sliding window.
 """
 
+import asyncio
 from collections import defaultdict, deque
 from statistics import mean
 
@@ -97,7 +98,11 @@ class SemanticDetector(BaseDetector):
 
         try:
             store = self._get_store()
-            matches = store.query_similar(payload, top_k=self.top_k)
+            matches = await asyncio.to_thread(
+                store.query_similar,
+                payload,
+                self.top_k,
+            )
         except ImportError:
             return DetectionResult(
                 is_threat=False,

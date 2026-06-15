@@ -9,5 +9,17 @@ services:
     volumes:
       - ./backend/data:/app/data
     environment:
-      - LLM_ENABLED=false
+      MIMO_API_KEY: ${MIMO_API_KEY:-}
+      MIMO_BASE_URL: ${MIMO_BASE_URL:-https://token-plan-cn.xiaomimimo.com/v1}
+      MIMO_MODEL: ${MIMO_MODEL:-mimo-v2.5-pro}
+      LLM_ENABLED: ${LLM_ENABLED:-false}
+      CHROMA_ALLOW_MODEL_DOWNLOAD: ${CHROMA_ALLOW_MODEL_DOWNLOAD:-false}
+    restart: unless-stopped
+
+  frontend:
+    build: ./frontend
+    ports:
+      - "5173:80"
+    depends_on:
+      - backend
     restart: unless-stopped

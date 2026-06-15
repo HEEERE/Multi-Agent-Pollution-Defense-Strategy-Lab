@@ -1,6 +1,30 @@
-# Multi-Agent Cascading Pollution Detection & Defense Platform
+# MAJD-Guard 多智能体级联污染检测与联合防御策略实验室
 
-A research and product platform for simulating, observing, recording, and replaying **Prompt Injection / RAG Context Poisoning / Tool Pollution Propagation** in multi-agent systems. Features a pluggable 3-level Monitor Pipeline with MiMo LLM detection, plus a **Multi-Agent Joint Defense Coordinator** with 7 specialized guard agents, weighted consensus voting, dynamic containment, and propagation blocking.
+面向多智能体系统的中文安全研究与产品平台，用于模拟、观测、记录、回放并阻断 **Prompt Injection、RAG 上下文污染、工具污染与级联传播**。
+
+平台包含可插拔的三级检测流水线、MiMo 大模型意图判断、7 类联合防御智能体、加权共识、动态隔离、TraceGraph 污染链路和完整的策略实验工作流。
+
+> 当前交付状态：后端 **93 项测试通过**，前端类型检查与生产构建通过，10 个中文路由完成 Edge/Playwright 交互验收。真实 `mimo-v2.5-pro` 外部验收评分为 **100/100，可发布**。详见 [completion-report.md](completion-report.md)。
+
+## 产品界面
+
+| 策略实验室 | 链路追踪 |
+|---|---|
+| ![策略实验室](docs/images/strategy-lab.png) | ![链路追踪](docs/images/trace-explorer.png) |
+
+| 安全态势总览 | 检测基准测试 |
+|---|---|
+| ![安全态势总览](docs/images/dashboard.png) | ![检测基准测试](docs/images/benchmark.png) |
+
+## 核心能力
+
+- **中文产品界面**：总览、策略、运行、追踪、回放、剧本、实验、基准、防御和设置 10 个工作区。
+- **策略闭环**：JSON 策略编辑、校验、保存、异步运行、WebSocket 实时事件、指标与 Trace 跳转。
+- **三级检测**：L1 正则、L2 语义相似度、L3 MiMo 意图判断，支持短路与贝叶斯置信度融合。
+- **联合防御**：7 个专用 Guard Agent、四级共识、动态隔离与恢复审批。
+- **可观测性**：React Flow TraceGraph、污染分数、传播深度、爆炸半径、事件时间线和 JSON 详情。
+- **研究工具**：6 个内置攻防剧本、可复现实验、29 条基准语料与报告持久化。
+- **离线韧性**：Chroma 模型不可用时自动使用本地确定性语义后备，避免首次下载阻塞服务。
 
 ## Architecture
 
@@ -82,23 +106,40 @@ After the detection pipeline collects evidence, the **DefenseCoordinator** runs 
 
 | Layer | Technology |
 |-------|-----------|
+| Frontend | React 19, TypeScript, Vite, Tailwind CSS, TanStack Query, Zustand |
+| Visualization | React Flow, Recharts, Monaco Editor, Lucide |
 | Backend | Python 3.11+, FastAPI, aiosqlite, Pydantic v2, httpx |
-| Detection | Regex, ChromaDB + sentence-transformers, MiMo LLM |
+| Detection | Regex, ChromaDB + local fallback, MiMo LLM |
 | Database | SQLite (WAL mode) + ChromaDB (persistent) |
 
 ## Quick Start
 
 ### Docker (Recommended)
 
+默认使用离线模式，不需要 API key：
+
 ```bash
 docker compose up --build
 ```
 
+- Chinese frontend: `http://localhost:5173`
 - Backend API docs: `http://localhost:8000/docs`
 - Health check: `http://localhost:8000/health`
 - WebSocket: `ws://localhost:8000/ws/events`
 
+启用真实 MiMo API：
+
+```powershell
+$env:MIMO_API_KEY="your-api-key"
+$env:LLM_ENABLED="true"
+docker compose up --build
+```
+
+API key 只通过环境变量读取，不应写入仓库或 `docker-compose.yml`。
+
 ### Manual
+
+Start the backend first:
 
 ```powershell
 cd backend
@@ -106,12 +147,43 @@ python -m venv .venv
 .\.venv\Scripts\Activate.ps1
 pip install -r requirements.txt
 Copy-Item .env.example .env
+# Edit backend/.env and set MIMO_API_KEY only when LLM_ENABLED=true.
 uvicorn app.main:app --reload --host 127.0.0.1 --port 8000
+```
+
+Then start the Chinese frontend:
+
+```powershell
+cd frontend
+npm install
+npm run dev
+```
+
+The frontend runs at `http://127.0.0.1:5173`. Vite proxies `/api`, `/health`,
+and `/ws` to `http://127.0.0.1:8000`. To use a different backend, set:
+
+```text
+VITE_API_BASE_URL=http://127.0.0.1:8000
+VITE_WS_BASE_URL=ws://127.0.0.1:8000
+```
+
+Production checks:
+
+```powershell
+cd frontend
+npm run typecheck
+npm run build
+```
+
+Backend checks:
+
+```powershell
+backend\.venv\Scripts\python.exe -m pytest backend/tests -q -p no:cacheprovider
 ```
 
 ### Offline Demo Mode
 
-Set `LLM_ENABLED=false` in `backend/.env` — no API key required. All detectors (including L2 semantic via local embedding model) and simulation work fully offline.
+Set `LLM_ENABLED=false` in `backend/.env` — no API key required. L2 semantic detection uses a deterministic local similarity fallback when the Chroma ONNX model is unavailable. Set `CHROMA_ALLOW_MODEL_DOWNLOAD=true` to opt into downloading and using the Chroma embedding model.
 
 ## Project Structure
 
@@ -238,7 +310,7 @@ Set `LLM_ENABLED=false` in `backend/.env` — no API key required. All detectors
 - **User Strategy System** — Create, validate, compile, and run user-defined strategies (JSON/YAML topology + policies + detector configs); async background execution with per-run WebSocket streaming and SQLite persistence
 - **Contamination Analysis** — Propagation depth, blast radius, time-to-detection, recovery success, persistence metrics
 - **Runtime Settings** — Per-detector enable/disable (regex, semantic, llm_intent), threshold tuning, and LLM config changes trigger live pipeline rebuild with fresh LLM client (no restart required); reset restores factory defaults and rebuilds pipeline
-- **Test Suite** — 90 tests: 23 API-level route tests + 67 unit/integration tests (10 consensus, 12 containment, 7 defense coordinator, 6 pipeline joint defense, 6 policy engine, 5 trace graph, 5 contamination, 5 event store migration, 11 contract)
+- **Test Suite** — 93 backend tests, including API contracts, defense consensus and containment, policy enforcement, trace analysis, persistence migrations, MiMo configuration, and offline semantic fallback coverage
 
 ## TraceGraph & Contamination Analysis
 
