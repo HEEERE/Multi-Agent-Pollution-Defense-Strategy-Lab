@@ -85,6 +85,23 @@ class SemanticDetector(BaseDetector):
         stats = self._category_stats.get(injection_type)
         return stats.min_matches if stats else self.min_matches
 
+    def _record_calibration(
+        self,
+        event: "AgentEvent",
+        injection_type: str,
+        similarity: float,
+        flagged: bool,
+    ) -> None:
+        label = event.metadata.get("ground_truth_threat")
+        if not self.auto_calibrate or type(label) is not bool:
+            return
+        stats = self._category_stats[injection_type]
+        if not stats.window:
+            stats.threshold = self.threshold
+            stats.min_matches = self.min_matches
+        stats.record(similarity, label, flagged)
+        stats.calibrate()
+
     async def detect(self, event: "AgentEvent", context: DetectionContext) -> DetectionResult:
         payload = event.payload_snippet
         if not payload or len(payload.strip()) < 10:
@@ -156,13 +173,14 @@ class SemanticDetector(BaseDetector):
                     "auto_calibrated": self.auto_calibrate,
                 },
             )
-            if self.auto_calibrate:
-                self._category_stats[pred_injection_type].record(best_score, True, True)
+            self._record_calibration(
+                event, pred_injection_type, best_score, flagged=True
+            )
             return result
 
-        if self.auto_calibrate:
-            self._category_stats[pred_injection_type].record(best_score, False, False)
-            self._category_stats[pred_injection_type].calibrate()
+        self._record_calibration(
+            event, pred_injection_type, best_score, flagged=False
+        )
 
         return DetectionResult(
             is_threat=False,

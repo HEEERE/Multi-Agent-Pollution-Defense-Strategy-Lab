@@ -21,13 +21,22 @@ export function Runs() {
     queryKey: ["run", runId],
     queryFn: () => api.getRun(runId!),
     enabled: Boolean(runId),
-    refetchInterval: runId ? 1_500 : false,
+    refetchInterval: (query) =>
+      ["completed", "failed", "cancelled"].includes(
+        query.state.data?.status ?? "",
+      )
+        ? false
+        : 1_500,
   });
   const events = useQuery({
     queryKey: ["run-events", runId],
     queryFn: () => api.getRunEvents(runId!),
     enabled: Boolean(runId),
-    refetchInterval: runId ? 1_500 : false,
+    refetchInterval: ["completed", "failed", "cancelled"].includes(
+      run.data?.status ?? "",
+    )
+      ? false
+      : 1_500,
   });
   const metrics = useQuery({
     queryKey: ["run-metrics", runId],

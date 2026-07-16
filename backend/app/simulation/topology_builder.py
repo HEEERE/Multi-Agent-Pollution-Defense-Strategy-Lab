@@ -1,4 +1,5 @@
 from app.agents.base import BaseAgent
+from app.agents.auditor import AuditorAgent
 from app.gateway.base import BaseGateway
 from app.message_bus import MessageBus
 from app.schemas import (
@@ -16,6 +17,7 @@ class TopologyBuilder:
         self.nodes: dict[str, BaseGateway | BaseAgent | BaseTool] = {}
 
     def build(self) -> dict[str, BaseGateway | BaseAgent | BaseTool]:
+        self.bus.bind_topology(self.config.edges, self.config.monitors)
         for node_cfg in self.config.nodes:
             node = self._create_node(node_cfg)
             if node is not None:
@@ -38,4 +40,18 @@ class TopologyBuilder:
             )
         elif node_type == "tool":
             return BaseTool(node_id, self.bus)
+        elif node_type == "memory":
+            return BaseTool(node_id, self.bus)
+        elif node_type == "monitor":
+            protected = [
+                node.node_id
+                for node in self.config.nodes
+                if node.node_type.lower() == "agent"
+            ]
+            return AuditorAgent(
+                node_id,
+                self.bus,
+                self.llm_client,
+                protected_nodes=protected,
+            )
         return None

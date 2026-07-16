@@ -22,19 +22,16 @@ export function Settings() {
     queryKey: ["settings", category],
     queryFn: () => api.getSettingsCategory(category),
   });
+  const categoryReady =
+    settings.data?.category === category && !settings.isFetching;
   useEffect(() => {
-    if (!settings.data) return;
-    const values = { ...settings.data.values };
-    if (category === "llm" && "llm.api_key" in values) values["llm.api_key"] = "";
-    setDraft(JSON.stringify(values, null, 2));
+    if (settings.data?.category !== category) return;
+    setDraft(JSON.stringify(settings.data.values, null, 2));
   }, [category, settings.data]);
 
   const save = useMutation({
     mutationFn: async () => {
       const payload: JsonObject = safeJsonParse(draft);
-      if (category === "llm" && payload["llm.api_key"] === "") {
-        delete payload["llm.api_key"];
-      }
       return api.updateSettingsCategory(category, payload);
     },
     onSuccess: async () => {
@@ -68,7 +65,11 @@ export function Settings() {
             <button
               type="button"
               key={item.id}
-              onClick={() => setCategory(item.id)}
+              disabled={save.isPending || reset.isPending}
+              onClick={() => {
+                setDraft("{}");
+                setCategory(item.id);
+              }}
               className={cn("tab", category === item.id && "tab-active")}
             >
               {item.label}
@@ -78,26 +79,27 @@ export function Settings() {
         {category === "llm" && (
           <div className="flex items-start gap-3 border-b border-cyan-500/20 bg-cyan-500/5 px-4 py-3 text-xs leading-5 text-cyan-200">
             <ShieldCheck className="mt-0.5 size-4 shrink-0" />
-            API 密钥读取后不会回填到编辑器。保留空字符串表示不修改当前密钥；输入新值才会更新。
+            API 密钥仅通过服务端 MIMO_API_KEY 环境变量配置，不会写入数据库或通过接口返回。
           </div>
         )}
         <textarea
           className="h-[580px] w-full resize-none bg-[#06101a] p-5 font-mono text-sm leading-6 text-slate-300 outline-none"
           value={draft}
           onChange={(event) => setDraft(event.target.value)}
+          disabled={!categoryReady}
           spellCheck={false}
         />
         <div className="flex justify-end gap-2 border-t border-slate-800 p-4">
           <button
             type="button"
             className="btn"
-            disabled={reset.isPending}
+            disabled={!categoryReady || reset.isPending}
             onClick={() => window.confirm("确定重置当前分类？") && reset.mutate()}
           >
             <RotateCcw className="size-4" />
             重置分类
           </button>
-          <button type="button" className="btn-primary" disabled={save.isPending} onClick={() => save.mutate()}>
+          <button type="button" className="btn-primary" disabled={!categoryReady || save.isPending} onClick={() => save.mutate()}>
             <Save className="size-4" />
             保存设置
           </button>

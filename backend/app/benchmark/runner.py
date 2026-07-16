@@ -3,7 +3,7 @@
 from time import perf_counter, time
 from typing import Any
 
-from app.benchmark.payloads import BENCHMARK_PAYLOADS
+from app.benchmark.heldout import DATASET_ID, DATASET_SHA256, HELDOUT_PAYLOADS
 from app.detectors.factory import create_pipeline
 from app.detectors.pipeline import DetectorPipeline
 from app.event_store import EventStore
@@ -21,6 +21,9 @@ from app.schemas import (
     BenchmarkReport,
     MonitorLevel,
 )
+
+# Kept as a module-level alias so tests can inject small deterministic corpora.
+BENCHMARK_PAYLOADS = HELDOUT_PAYLOADS
 
 
 def _new_id() -> str:
@@ -71,24 +74,25 @@ class BenchmarkRunner:
 
         pipeline = create_pipeline(config, self.llm_client, bus)
 
-        level_data: dict[int, dict[str, Any]] = {
-            1: {"tp": 0, "fp": 0, "tn": 0, "fn": 0, "latencies": []},
-            2: {"tp": 0, "fp": 0, "tn": 0, "fn": 0, "latencies": []},
-            3: {"tp": 0, "fp": 0, "tn": 0, "fn": 0, "latencies": []},
-        }
-
         total_threats_gt = 0
+        outcomes: list[dict[str, Any]] = []
+        categories: set[str] = set()
+        expected_level_counts: dict[int, int] = {}
 
         for payload_text, is_threat_gt, expected_level, inj_type in BENCHMARK_PAYLOADS:
             if is_threat_gt:
                 total_threats_gt += 1
+            categories.add(inj_type)
+            expected_level_counts[expected_level] = expected_level_counts.get(expected_level, 0) + 1
 
             event = AgentEvent(
                 event_type=EventType.INPUT,
                 source_node="Benchmark",
                 target_node="Pipeline",
                 payload_snippet=payload_text,
-                severity=EventSeverity.WARNING if is_threat_gt else EventSeverity.INFO,
+                # Every sample receives the same observable severity. Ground truth
+                # must never decide whether the L3 detector is allowed to run.
+                severity=EventSeverity.WARNING,
             )
 
             t0 = perf_counter()
@@ -101,52 +105,54 @@ class BenchmarkRunner:
             else:
                 detected_level = result.monitor_level.value
                 action = result.action_taken.value
+            detected = action != "none"
+            if detected and detected_level == 0:
+                detected_level = 1
+            outcomes.append({
+                "is_threat": is_threat_gt,
+                "detected": detected,
+                "detected_level": detected_level,
+                "elapsed": elapsed,
+                "expected_level": expected_level,
+                "category": inj_type,
+            })
 
-            for lv in (1, 2, 3):
-                if lv <= detected_level:
-                    level_data[lv]["latencies"].append(elapsed)
-
-            if is_threat_gt:
-                if action != "none":
-                    level_data[detected_level or 1]["tp"] += 1
+        def _calc_stats(level: int) -> LevelStats:
+            tp = fp = tn = fn = 0
+            for outcome in outcomes:
+                detected_by_level = (
+                    outcome["detected"] and outcome["detected_level"] <= level
+                )
+                if outcome["is_threat"]:
+                    tp += int(detected_by_level)
+                    fn += int(not detected_by_level)
                 else:
-                    for lv in (1, 2, 3):
-                        level_data[lv]["fn"] += 1
-            else:
-                if action != "none":
-                    level_data[detected_level or 1]["fp"] += 1
-                else:
-                    for lv in (1, 2, 3):
-                        level_data[lv]["tn"] += 1
+                    fp += int(detected_by_level)
+                    tn += int(not detected_by_level)
 
-        def _calc_stats(ld: dict) -> LevelStats:
-            tp, fp, tn, fn = ld["tp"], ld["fp"], ld["tn"], ld["fn"]
-            total = tp + fp + tn + fn
-            lats = ld["latencies"]
+            lats = [
+                item["elapsed"]
+                for item in outcomes
+                if item["detected"] and item["detected_level"] == level
+            ]
             lats_sorted = sorted(lats)
             return LevelStats(
-                level=MonitorLevel.NONE,
-                total_tested=total,
+                level=MonitorLevel(level),
+                total_tested=len(outcomes),
                 threats_detected=tp,
                 false_positives=fp,
                 true_negatives=tn,
-                recall=round(tp / (tp + fn), 4) if (tp + fn) > 0 else 1.0,
+                recall=round(tp / (tp + fn), 4) if (tp + fn) > 0 else 0.0,
                 fpr=round(fp / (fp + tn), 4) if (fp + tn) > 0 else 0.0,
                 avg_latency_ms=round(sum(lats) / len(lats), 2) if lats else 0.0,
-                p95_latency_ms=round(lats_sorted[int(len(lats_sorted) * 0.95)], 2) if lats_sorted else 0.0,
+                p95_latency_ms=round(lats_sorted[int((len(lats_sorted) - 1) * 0.95)], 2) if lats_sorted else 0.0,
             )
 
-        per_level: list[LevelStats] = []
-        for lv in (1, 2, 3):
-            stats = _calc_stats(level_data[lv])
-            stats.level = MonitorLevel(lv)
-            per_level.append(stats)
-
-        # Overall recall/FPR
-        all_tp = sum(d["tp"] for d in level_data.values())
-        all_fp = sum(d["fp"] for d in level_data.values())
-        all_fn = sum(d["fn"] for d in level_data.values())
-        all_tn = sum(d["tn"] for d in level_data.values())
+        per_level = [_calc_stats(level) for level in (1, 2, 3)]
+        all_tp = sum(1 for item in outcomes if item["is_threat"] and item["detected"])
+        all_fp = sum(1 for item in outcomes if not item["is_threat"] and item["detected"])
+        all_fn = sum(1 for item in outcomes if item["is_threat"] and not item["detected"])
+        all_tn = sum(1 for item in outcomes if not item["is_threat"] and not item["detected"])
 
         return BenchmarkReport(
             report_id=report_id,
@@ -154,6 +160,10 @@ class BenchmarkRunner:
             pipeline_config={
                 "detectors": ["regex", "semantic", "llm_intent"],
                 "short_circuit": True,
+                "dataset_id": DATASET_ID,
+                "dataset_sha256": DATASET_SHA256,
+                "categories": sorted(categories),
+                "expected_level_counts": expected_level_counts,
             },
             total_payloads=len(BENCHMARK_PAYLOADS),
             ground_truth_threats=total_threats_gt,

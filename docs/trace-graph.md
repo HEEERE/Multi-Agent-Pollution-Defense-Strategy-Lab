@@ -86,7 +86,7 @@ Node contamination = max of all incoming event scores.
 ### Get TraceGraph
 
 ```bash
-curl http://127.0.0.1:8000/api/traces/trace_abc123/graph
+curl http://127.0.0.1:8000/api/v1/traces/trace_abc123/graph
 ```
 
 Response:
@@ -107,7 +107,7 @@ Response:
 ### Get Contamination Metrics
 
 ```bash
-curl http://127.0.0.1:8000/api/traces/trace_abc123/contamination
+curl http://127.0.0.1:8000/api/v1/traces/trace_abc123/contamination
 ```
 
 Response:

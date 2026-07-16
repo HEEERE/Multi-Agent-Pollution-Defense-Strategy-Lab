@@ -1,3 +1,5 @@
+from time import perf_counter
+
 from app.detectors.base import BaseDetector, DetectionContext
 from app.detectors.honeypot import HoneyPotRouter
 from app.message_bus import MessageBus
@@ -61,7 +63,9 @@ class DetectorPipeline:
                     })
                     continue
 
+            started = perf_counter()
             result = await det.detect(event, context)
+            latency_ms = (perf_counter() - started) * 1000
 
             detection_log.append({
                 "detector_id": det.detector_id,
@@ -70,6 +74,7 @@ class DetectorPipeline:
                 "confidence": result.confidence,
                 "reason": result.reason,
                 "action": result.suggested_action.value,
+                "latency_ms": round(latency_ms, 3),
             })
 
             if not result.is_threat:
@@ -83,6 +88,7 @@ class DetectorPipeline:
                             "is_threat": False,
                             "confidence": result.confidence,
                             "reason": result.reason,
+                            "latency_ms": round(latency_ms, 3),
                             "action": ActionTaken.DECOY.value,
                             "honeypot_routed": True,
                         })
@@ -182,6 +188,12 @@ class DetectorPipeline:
             elif decision.action == "quarantine":
                 updates["action_taken"] = ActionTaken.QUARANTINE
                 updates["status"] = EventStatus.QUARANTINED
+            elif decision.action == "alert":
+                updates["action_taken"] = ActionTaken.ALERT
+            elif decision.action == "human_review":
+                updates["action_taken"] = ActionTaken.QUARANTINE
+                updates["status"] = EventStatus.QUARANTINED
+                updates["metadata"]["human_review_required"] = True
             final_event = final_event.model_copy(update=updates)
 
         # ── Joint Defense Coordination ─────────────────────────

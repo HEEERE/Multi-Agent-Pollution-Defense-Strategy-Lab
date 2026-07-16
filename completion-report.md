@@ -1,5 +1,9 @@
 # Product Completion Report
 
+> Historical acceptance snapshot. This report records UI and delivery checks
+> performed on 2026-06-15; it is not a production security certification or an
+> independent evaluation of detector generalization.
+
 Date: 2026-06-15
 
 ## Result

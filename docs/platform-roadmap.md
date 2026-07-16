@@ -51,9 +51,20 @@ When `LLM_ENABLED=false`, the platform returns deterministic disabled-provider r
 - **Idempotent SQLite Migration** using PRAGMA table_info for backward-compatible schema evolution
 - **Benchmark v2** corpus with 7 categories (19 samples) and v2 metrics model
 - **Frontend Contamination UI** with summary panel, node badges, and enhanced detail panel
-- **API**: `/api/traces/{id}/graph`, `/api/traces/{id}/contamination`, `/api/policies`, `/api/policies/evaluate`
+- **API**: `/api/v1/traces/{id}/graph`, `/api/v1/traces/{id}/contamination`, `/api/v1/policies`, `/api/v1/policies/evaluate`
 - Documentation: `docs/trace-graph.md`, `docs/policy-engine.md`
 
 ## Next recommended milestone
 
-Add `memory/` and `rag/` guard modules to enforce security semantics at the memory and retrieval layers.
+Expand the held-out corpus with externally reviewed labels and provenance,
+add project-level RBAC/tenant isolation, and move the SQLite worker protocol to
+a distributed queue only when multi-host scale is required.
+
+## Completed hardening — v0.4
+
+- Environment-only LLM secrets with legacy SQLite secret removal
+- Optional `MAJD_API_KEY` protection for REST and WebSocket, with signed HttpOnly browser sessions
+- Strategy execution for directed edges, monitor nodes, custom policies and repeated `num_runs`
+- SQLite-backed persistent run queue with atomic claims and restart recovery
+- Versioned `majd-heldout-v1` multilingual benchmark separated from vector-store seed samples
+- Frontend Vitest and Testing Library regression suite

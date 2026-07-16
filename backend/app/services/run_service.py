@@ -5,7 +5,7 @@ from time import time
 from fastapi import HTTPException
 
 from app.event_store import get_event_store
-from app.schemas import RunRead, RunStatus, new_id
+from app.schemas import ExperimentStatus, RunRead, RunStatus, new_id
 from app.strategy.compiler import compile_strategy
 
 _running_tasks: dict[str, asyncio.Task] = {}
@@ -31,9 +31,6 @@ async def create_run_from_strategy(strategy: dict) -> RunRead:
     }
     await store.store_run(run)
 
-    task = asyncio.create_task(_execute_strategy_run(run_id, strategy))
-    _running_tasks[run_id] = task
-
     return RunRead(
         run_id=run_id,
         strategy_id=strategy["strategy_id"],
@@ -43,7 +40,9 @@ async def create_run_from_strategy(strategy: dict) -> RunRead:
     )
 
 
-async def _execute_strategy_run(run_id: str, strategy: dict) -> None:
+async def _execute_strategy_run(
+    run_id: str, strategy: dict, *, requeue_on_cancel: bool = False
+) -> None:
     store = await get_event_store()
     try:
         await store.update_run(
@@ -63,6 +62,23 @@ async def _execute_strategy_run(run_id: str, strategy: dict) -> None:
         runner = ExperimentRunner(store)
         result = await runner.run(config)
 
+        current = await store.get_run(run_id)
+        if current and current.get("status") == "cancelled":
+            return
+
+        if result.status == ExperimentStatus.FAILED:
+            await store.update_run(
+                run_id,
+                {
+                    "status": "failed",
+                    "experiment_id": result.experiment_id,
+                    "trace_id": result.trace_id,
+                    "error": result.error_message or "experiment failed",
+                    "finished_at": time(),
+                },
+            )
+            return
+
         await store.update_run(
             run_id,
             {
@@ -77,9 +93,22 @@ async def _execute_strategy_run(run_id: str, strategy: dict) -> None:
         )
 
     except asyncio.CancelledError:
-        await store.update_run(
-            run_id, {"status": "cancelled", "finished_at": time()}
-        )
+        current = await store.get_run(run_id)
+        cancelled_by_user = current and current.get("status") == "cancelled"
+        if requeue_on_cancel and not cancelled_by_user:
+            await store.update_run(
+                run_id,
+                {
+                    "status": "queued",
+                    "started_at": None,
+                    "finished_at": None,
+                    "error": "requeued during server shutdown",
+                },
+            )
+        elif not cancelled_by_user:
+            await store.update_run(
+                run_id, {"status": "cancelled", "finished_at": time()}
+            )
         raise
 
     except Exception as exc:
@@ -94,6 +123,51 @@ async def _execute_strategy_run(run_id: str, strategy: dict) -> None:
 
     finally:
         _running_tasks.pop(run_id, None)
+
+
+async def run_worker(stop_event: asyncio.Event) -> None:
+    """Process durable SQLite-backed run jobs until shutdown."""
+    store = await get_event_store()
+    while not stop_event.is_set():
+        queued = await store.claim_next_queued_run()
+        if queued is None:
+            try:
+                await asyncio.wait_for(stop_event.wait(), timeout=0.25)
+            except TimeoutError:
+                pass
+            continue
+
+        run_id = queued["run_id"]
+        strategy_id = queued.get("strategy_id")
+        version = queued.get("strategy_version") or 1
+        strategy = await store.get_strategy(strategy_id) if strategy_id else None
+        snapshot = (
+            await store.get_strategy_version(strategy_id, version)
+            if strategy_id
+            else None
+        )
+        if strategy is None or snapshot is None:
+            await store.update_run(
+                run_id,
+                {
+                    "status": "failed",
+                    "error": "strategy snapshot not found",
+                    "finished_at": time(),
+                },
+            )
+            continue
+        strategy["version"] = version
+        strategy["content_json"] = snapshot["content_json"]
+
+        task = asyncio.create_task(
+            _execute_strategy_run(run_id, strategy, requeue_on_cancel=True)
+        )
+        _running_tasks[run_id] = task
+        try:
+            await task
+        except asyncio.CancelledError:
+            if stop_event.is_set():
+                raise
 
 
 async def get_run(run_id: str) -> RunRead:
@@ -154,8 +228,12 @@ async def get_run_events(
 async def cancel_run(run_id: str) -> dict:
     task = _running_tasks.get(run_id)
     if task and not task.done():
+        store = await get_event_store()
+        await store.update_run(
+            run_id, {"status": "cancelled", "finished_at": time()}
+        )
         task.cancel()
-        return {"run_id": run_id, "status": "cancelling"}
+        return {"run_id": run_id, "status": "cancelled"}
 
     store = await get_event_store()
     run = await store.get_run(run_id)

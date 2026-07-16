@@ -1,5 +1,7 @@
 """Settings business logic — CRUD with pipeline rebuild hooks."""
 
+from fastapi import HTTPException
+
 from app.settings_manager import VALID_CATEGORIES, get_settings_manager
 
 
@@ -21,6 +23,11 @@ async def get_category(category: str) -> dict:
 async def update_category(category: str, payload: dict) -> dict:
     if category not in VALID_CATEGORIES:
         raise ValueError(f"Unknown category: {category}")
+    if category == "llm" and "llm.api_key" in payload:
+        raise HTTPException(
+            status_code=400,
+            detail="llm.api_key must be configured through MIMO_API_KEY",
+        )
     mgr = get_settings_manager()
     updated = await mgr.update_category(category, payload)
     if category == "llm":

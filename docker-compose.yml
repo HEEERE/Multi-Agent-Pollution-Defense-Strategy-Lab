@@ -9,6 +9,8 @@ services:
     volumes:
       - ./backend/data:/app/data
     environment:
+      MAJD_API_KEY: ${MAJD_API_KEY:-}
+      AUTH_SESSION_TTL_SECONDS: ${AUTH_SESSION_TTL_SECONDS:-28800}
       MIMO_API_KEY: ${MIMO_API_KEY:-}
       MIMO_BASE_URL: ${MIMO_BASE_URL:-https://token-plan-cn.xiaomimimo.com/v1}
       MIMO_MODEL: ${MIMO_MODEL:-mimo-v2.5-pro}

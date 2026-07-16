@@ -13,6 +13,15 @@ VALID_ACTIONS = {"allow", "alert", "block", "quarantine", "isolate", "human_revi
 def validate_strategy(content: dict) -> StrategyValidationResult:
     issues: list[StrategyValidationIssue] = []
 
+    num_runs = content.get("num_runs", 1)
+    if not isinstance(num_runs, int) or not 1 <= num_runs <= 50:
+        issues.append(
+            StrategyValidationIssue(
+                path="num_runs",
+                message="num_runs must be an integer between 1 and 50",
+            )
+        )
+
     topology = content.get("topology")
     if not isinstance(topology, dict):
         return StrategyValidationResult(
@@ -64,6 +73,23 @@ def validate_strategy(content: dict) -> StrategyValidationResult:
         )
 
     node_set = set(node_ids)
+
+    monitors = topology.get("monitors", [])
+    if not isinstance(monitors, list):
+        issues.append(
+            StrategyValidationIssue(
+                path="topology.monitors", message="monitors must be a list"
+            )
+        )
+    else:
+        for i, monitor_id in enumerate(monitors):
+            if monitor_id not in node_set:
+                issues.append(
+                    StrategyValidationIssue(
+                        path=f"topology.monitors[{i}]",
+                        message=f"monitor node '{monitor_id}' does not exist",
+                    )
+                )
 
     edges = topology.get("edges", [])
     for i, edge in enumerate(edges):

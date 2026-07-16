@@ -39,7 +39,6 @@ FACTORY_DEFAULTS: dict[str, dict[str, object]] = {
         "llm.provider": "mimo",
         "llm.base_url": str(get_settings().mimo_base_url),
         "llm.model": get_settings().mimo_model,
-        "llm.api_key": get_settings().mimo_api_key,
         "llm.temperature": get_settings().llm_temperature,
         "llm.max_tokens": get_settings().llm_max_tokens,
         "llm.request_timeout": get_settings().llm_request_timeout_seconds,
@@ -94,6 +93,11 @@ class SettingsManager:
 
     async def init(self) -> None:
         conn = await self._get_conn()
+        # Secrets are environment-only. Remove values persisted by older releases.
+        await conn.execute(
+            "DELETE FROM settings WHERE category = 'llm' AND key = 'llm.api_key'"
+        )
+        await conn.commit()
         cursor = await conn.execute("SELECT COUNT(*) FROM settings")
         row = await cursor.fetchone()
         count = row[0] if row else 0
@@ -132,6 +136,12 @@ class SettingsManager:
         cat = self._cache.get(category, {})
         return cat.get(key, default)
 
+    async def close(self) -> None:
+        if self._conn is not None:
+            await self._conn.close()
+            self._conn = None
+        self._ready = False
+
     async def get_all(self) -> dict[str, dict[str, object]]:
         return {cat: dict(kv) for cat, kv in self._cache.items()}
 
@@ -149,6 +159,8 @@ class SettingsManager:
     async def update_category(self, category: str, values: dict[str, object]) -> int:
         if category not in VALID_CATEGORIES:
             raise ValueError(f"Unknown settings category: {category}")
+        if category == "llm" and "llm.api_key" in values:
+            raise ValueError("llm.api_key is environment-only and cannot be persisted")
         conn = await self._get_conn()
         import time as _time
         now = _time.time()
@@ -194,3 +206,10 @@ def get_settings_manager() -> SettingsManager:
 async def init_settings_manager() -> None:
     mgr = get_settings_manager()
     await mgr.init()
+
+
+async def close_settings_manager() -> None:
+    global _settings_manager
+    if _settings_manager is not None:
+        await _settings_manager.close()
+        _settings_manager = None

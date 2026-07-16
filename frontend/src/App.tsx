@@ -1,5 +1,6 @@
 import { lazy, Suspense } from "react";
 import { Navigate, Route, Routes } from "react-router-dom";
+import { AuthGate } from "./components/auth/AuthGate";
 import { Loading } from "./components/common/Loading";
 import { AppShell } from "./components/layout/AppShell";
 
@@ -44,30 +45,32 @@ const TraceExplorer = lazy(() =>
 
 export function App() {
   return (
-    <Suspense
-      fallback={
-        <div className="grid min-h-screen place-items-center bg-ink-950">
-          <Loading label="正在加载工作台" />
-        </div>
-      }
-    >
-      <Routes>
-        <Route element={<AppShell />}>
-          <Route index element={<Dashboard />} />
-          <Route path="strategies" element={<StrategyLab />} />
-          <Route path="runs" element={<Runs />} />
-          <Route path="runs/:runId" element={<Runs />} />
-          <Route path="traces" element={<TraceExplorer />} />
-          <Route path="replay" element={<Replay />} />
-          <Route path="replay/:traceId" element={<Replay />} />
-          <Route path="playbooks" element={<Playbooks />} />
-          <Route path="experiments" element={<Experiments />} />
-          <Route path="benchmark" element={<Benchmark />} />
-          <Route path="defense" element={<DefenseCenter />} />
-          <Route path="settings" element={<Settings />} />
-          <Route path="*" element={<Navigate to="/" replace />} />
-        </Route>
-      </Routes>
-    </Suspense>
+    <AuthGate>
+      <Suspense
+        fallback={
+          <div className="grid min-h-screen place-items-center bg-ink-950">
+            <Loading label="正在加载工作台" />
+          </div>
+        }
+      >
+        <Routes>
+          <Route element={<AppShell />}>
+            <Route index element={<Dashboard />} />
+            <Route path="strategies" element={<StrategyLab />} />
+            <Route path="runs" element={<Runs />} />
+            <Route path="runs/:runId" element={<Runs />} />
+            <Route path="traces" element={<TraceExplorer />} />
+            <Route path="replay" element={<Replay />} />
+            <Route path="replay/:traceId" element={<Replay />} />
+            <Route path="playbooks" element={<Playbooks />} />
+            <Route path="experiments" element={<Experiments />} />
+            <Route path="benchmark" element={<Benchmark />} />
+            <Route path="defense" element={<DefenseCenter />} />
+            <Route path="settings" element={<Settings />} />
+            <Route path="*" element={<Navigate to="/" replace />} />
+          </Route>
+        </Routes>
+      </Suspense>
+    </AuthGate>
   );
 }

@@ -22,8 +22,7 @@ def client():
     app.settings_manager.DB_PATH = events_db
 
     app.event_store._event_store = None
-    if hasattr(app.settings_manager, "_manager"):
-        app.settings_manager._manager = None
+    app.settings_manager._settings_manager = None
 
     from app.main import create_app
     fastapi_app = create_app()
@@ -34,8 +33,7 @@ def client():
     app.event_store.DB_PATH = orig_event_db
     app.settings_manager.DB_PATH = orig_settings_db
     app.event_store._event_store = None
-    if hasattr(app.settings_manager, "_manager"):
-        app.settings_manager._manager = None
+    app.settings_manager._settings_manager = None
 
     try:
         shutil.rmtree(db_dir)

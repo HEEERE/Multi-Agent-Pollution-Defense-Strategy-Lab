@@ -4,7 +4,7 @@
 
 平台包含可插拔的三级检测流水线、MiMo 大模型意图判断、7 类联合防御智能体、加权共识、动态隔离、TraceGraph 污染链路和完整的策略实验工作流。
 
-> 当前交付状态：后端 **93 项测试通过**，前端类型检查与生产构建通过，10 个中文路由完成 Edge/Playwright 交互验收。真实 `mimo-v2.5-pro` 外部验收评分为 **100/100，可发布**。详见 [completion-report.md](completion-report.md)。
+> 当前定位：具备访问控制与可复现实验闭环的**研究平台版**。后端 **107 项测试通过**，前端 **2 个测试文件 / 3 项组件测试**、类型检查与生产构建通过。历史界面验收结果见 [completion-report.md](completion-report.md)；该评分不代表生产安全认证。
 
 ## 产品界面
 
@@ -23,7 +23,7 @@
 - **三级检测**：L1 正则、L2 语义相似度、L3 MiMo 意图判断，支持短路与贝叶斯置信度融合。
 - **联合防御**：7 个专用 Guard Agent、四级共识、动态隔离与恢复审批。
 - **可观测性**：React Flow TraceGraph、污染分数、传播深度、爆炸半径、事件时间线和 JSON 详情。
-- **研究工具**：6 个内置攻防剧本、可复现实验、29 条基准语料与报告持久化。
+- **研究工具**：6 个内置攻防剧本、可重复实验、24 条独立 held-out 中英基准语料与报告持久化。
 - **离线韧性**：Chroma 模型不可用时自动使用本地确定性语义后备，避免首次下载阻塞服务。
 
 ## Architecture
@@ -137,6 +137,18 @@ docker compose up --build
 
 API key 只通过环境变量读取，不应写入仓库或 `docker-compose.yml`。
 
+启用平台访问控制（建议所有网络暴露部署启用）：
+
+```powershell
+$env:MAJD_API_KEY="replace-with-a-strong-access-key"
+docker compose up --build
+```
+
+浏览器会显示登录页，并使用 HttpOnly、SameSite 签名会话访问 API 和
+WebSocket。脚本客户端也可发送 `Authorization: Bearer <MAJD_API_KEY>`。
+未设置 `MAJD_API_KEY` 时保持本地离线开发模式，不要求登录。
+完整边界与部署说明见 [docs/security.md](docs/security.md)。
+
 ### Manual
 
 Start the backend first:
@@ -171,6 +183,7 @@ Production checks:
 
 ```powershell
 cd frontend
+npm test
 npm run typecheck
 npm run build
 ```
@@ -196,6 +209,7 @@ Set `LLM_ENABLED=false` in `backend/.env` — no API key required. L2 semantic d
 │   │   ├── api/
 │   │   │   └── routes/             # APIRouter modules per domain
 │   │   │       ├── health.py       # /health, /api/platform/config
+│   │   │       ├── auth.py         # /api/auth/session
 │   │   │       ├── settings.py     # /api/v1/settings/*
 │   │   │       ├── events.py       # /api/v1/events/*
 │   │   │       ├── traces.py       # /api/v1/traces/*
@@ -211,6 +225,7 @@ Set `LLM_ENABLED=false` in `backend/.env` — no API key required. L2 semantic d
 │   │   │       ├── runs.py         # /api/v1/runs/*
 │   │   │       └── websocket.py    # /ws/events, /ws/runs/{run_id}
 │   │   ├── core/
+│   │   │   ├── auth.py             # API key + signed browser session
 │   │   │   ├── config.py           # Settings + CORS helpers
 │   │   │   ├── lifespan.py         # Startup/shutdown lifecycle
 │   │   │   └── errors.py           # Error handlers
@@ -251,7 +266,7 @@ Set `LLM_ENABLED=false` in `backend/.env` — no API key required. L2 semantic d
 │   │   ├── simulation/             # Turn-based simulation engine
 │   │   ├── experiments/            # Reproducible experiment runner + 10 metrics
 │   │   ├── replay/                 # Cursor-based trace replay
-│   │   ├── benchmark/              # Automated pipeline benchmarking
+│   │   ├── benchmark/              # Versioned held-out corpus + benchmarking
 │   │   ├── policy/                 # Policy engine (wired into runtime pipeline)
 │   │   ├── strategy/               # User strategy validator + compiler
 │   │   │   ├── validator.py        # Strategy content validation (topology, policies, etc.)
@@ -302,15 +317,17 @@ Set `LLM_ENABLED=false` in `backend/.env` — no API key required. L2 semantic d
 - **Threat Memory** — Shared in-memory threat intelligence accumulates node risk scores, known attack indicators, and contaminated trace history across defense decisions
 - **Multi-Agent Simulation Engine** — Configurable topology, injection sources, turn-based LLM-driven conversations
 - **Event Store & Trace System** — SQLite WAL persistence with full AgentEvent JSON serialization (all v2 fields preserved on round-trip), trace_id-based causal chain tracking, full replay
-- **Experiment System** — Reproducible experiments with 10 automated metrics
-- **Benchmark System** — 29 built-in payloads (19 attack + 10 safe), per-level recall/FPR/latency stats, persisted to SQLite
+- **Experiment System** — Strategy policies, directed edges, monitor nodes, repeated seeded runs, aggregate statistics and 10 automated metrics
+- **Benchmark System** — Versioned `majd-heldout-v1` corpus (24 samples: 14 attack + 10 safe/hard-negative), dataset hash, cumulative per-level recall/FPR/latency stats, persisted to SQLite
 - **Replay Engine** — Cursor-based trace step-through with play/pause/seek/speed (0.1x–16x)
 - **6 Built-in Playbooks** — EventSpec template pattern ensures each run produces a fresh trace with unique IDs
 - **Policy Engine** — Rule-based action decisions wired into runtime pipeline; actively enforces block/isolate/quarantine by updating `action_taken` and `status` on events, not just audit
 - **User Strategy System** — Create, validate, compile, and run user-defined strategies (JSON/YAML topology + policies + detector configs); async background execution with per-run WebSocket streaming and SQLite persistence
 - **Contamination Analysis** — Propagation depth, blast radius, time-to-detection, recovery success, persistence metrics
 - **Runtime Settings** — Per-detector enable/disable (regex, semantic, llm_intent), threshold tuning, and LLM config changes trigger live pipeline rebuild with fresh LLM client (no restart required); reset restores factory defaults and rebuilds pipeline
-- **Test Suite** — 93 backend tests, including API contracts, defense consensus and containment, policy enforcement, trace analysis, persistence migrations, MiMo configuration, and offline semantic fallback coverage
+- **Persistent Run Queue** — SQLite-backed atomic job claiming, immutable strategy-version snapshots, restart requeue and cancellation-safe terminal state
+- **Access Control** — Optional server API key, stateless signed browser session, protected `/api/v1` routes and authenticated WebSocket handshake
+- **Test Suite** — 107 backend tests plus Vitest/Testing Library frontend component tests, covering authentication, strategy runtime semantics, durable queue recovery, benchmark integrity and state regressions
 
 ## TraceGraph & Contamination Analysis
 
@@ -358,6 +375,9 @@ Strategy JSON → validate → compile → ExperimentConfig → ExperimentRunner
 |--------|------|-------------|
 | GET | `/health` | Health check |
 | GET | `/api/platform/config` | Platform configuration |
+| GET | `/api/auth/session` | Get authentication status |
+| POST | `/api/auth/session` | Create a signed browser session |
+| DELETE | `/api/auth/session` | Clear the browser session |
 | GET | `/api/v1/events` | Query events by trace, severity, status |
 | POST | `/api/v1/events/broadcast` | Broadcast an event to WebSocket clients |
 | GET | `/api/v1/events/latest` | Get latest events |
@@ -402,7 +422,7 @@ Strategy JSON → validate → compile → ExperimentConfig → ExperimentRunner
 | POST | `/api/v1/replay/{sid}/seek` | Seek to position |
 | POST | `/api/v1/replay/{sid}/speed` | Set replay speed |
 | GET | `/api/v1/replay/{sid}/state` | Get replay state |
-| POST | `/api/v1/benchmark/run` | Run benchmark (29 payloads) |
+| POST | `/api/v1/benchmark/run` | Run versioned held-out benchmark (24 payloads) |
 | GET | `/api/v1/benchmark/reports` | List benchmark reports |
 | GET | `/api/v1/benchmark/reports/{id}` | Get benchmark report |
 | GET | `/api/v1/honeypot/intel` | Get honeypot threat intelligence |
@@ -419,6 +439,14 @@ Strategy JSON → validate → compile → ExperimentConfig → ExperimentRunner
 
 WebSocket (global): `ws://127.0.0.1:8000/ws/events`
 WebSocket (per-run): `ws://127.0.0.1:8000/ws/runs/{run_id}`
+
+## Documentation
+
+- [Security boundary and deployment guidance](docs/security.md)
+- [Platform roadmap](docs/platform-roadmap.md)
+- [Policy engine](docs/policy-engine.md)
+- [TraceGraph and contamination analysis](docs/trace-graph.md)
+- [Completion and historical QA report](completion-report.md)
 
 ## License
 

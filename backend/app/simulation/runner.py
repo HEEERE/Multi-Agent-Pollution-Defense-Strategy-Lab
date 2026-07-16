@@ -2,6 +2,8 @@ import asyncio
 import uuid
 
 from app.agents.base import BaseAgent
+from app.agents.auditor import AuditorAgent
+from app.gateway.base import BaseGateway
 from app.llm.base import ChatMessage, LLMClient
 from app.message_bus import MessageBus, clear_trace_context, set_trace_context
 from app.schemas import (
@@ -70,19 +72,37 @@ class SimulationRunner:
             status=EventStatus.SAFE,
             action_taken=ActionTaken.NONE,
             severity=EventSeverity.WARNING,
-            metadata={"injection_type": injection.injection_type.value},
+            metadata={
+                **injection.metadata,
+                "injection_type": injection.injection_type.value,
+                "ground_truth_threat": True,
+            },
         )
         await self.bus.publish(event)
 
     async def _run_turn(self, nodes: dict, turn: int) -> None:
-        gateway = nodes.get("Gateway")
+        gateway = next(
+            (node for node in nodes.values() if isinstance(node, BaseGateway)),
+            None,
+        )
         if gateway is None:
             return
 
+        monitor_ids = set(self.config.monitors)
         agent_nodes = [
             nid for nid, n in nodes.items()
             if isinstance(n, BaseAgent)
+            and not isinstance(n, AuditorAgent)
+            and nid not in monitor_ids
         ]
+
+        routed_targets = [
+            edge.target
+            for edge in self.config.edges
+            if edge.source == gateway.node_id and edge.target in agent_nodes
+        ]
+        if routed_targets:
+            agent_nodes = routed_targets
 
         if not agent_nodes:
             return

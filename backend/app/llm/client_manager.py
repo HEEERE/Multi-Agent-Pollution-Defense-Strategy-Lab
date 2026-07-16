@@ -1,11 +1,15 @@
+from app.core.config import get_settings
 from app.llm.mimo_client import MiMoClient
 from app.settings_manager import get_settings_manager
 
 
 class LLMClientManager:
-    """Owns the LLM client lifecycle. Reads config from SettingsManager so
-    runtime settings changes (via PUT /api/settings/llm) take effect on the
-    next pipeline rebuild."""
+    """Owns the LLM client lifecycle.
+
+    Non-secret runtime options come from SettingsManager. The API key is read
+    only from the process environment and is never persisted or returned by
+    the settings API.
+    """
 
     def __init__(self) -> None:
         self._client: MiMoClient | None = None
@@ -17,8 +21,9 @@ class LLMClientManager:
 
     def _rebuild(self) -> MiMoClient:
         mgr = get_settings_manager()
+        settings = get_settings()
         self._client = MiMoClient(
-            api_key=str(mgr.get_value_sync("llm", "llm.api_key", "")),
+            api_key=settings.mimo_api_key,
             base_url=str(mgr.get_value_sync("llm", "llm.base_url", "")),
             model=str(mgr.get_value_sync("llm", "llm.model", "")),
             enabled=bool(mgr.get_value_sync("llm", "llm.enabled", False)),

@@ -21,4 +21,5 @@ async def platform_config() -> dict[str, str | bool]:
         "llm_model": settings.mimo_model,
         "llm_enabled": settings.llm_enabled,
         "llm_ready": settings.llm_ready,
+        "auth_enabled": settings.auth_enabled,
     }

@@ -59,12 +59,23 @@ class MessageBus:
         self.history: deque[AgentEvent] = deque(maxlen=max_history)
         self._event_store = None
         self._containment_registry = None
+        self._allowed_edges: set[tuple[str, str]] | None = None
+        self._topology_monitors: tuple[str, ...] = ()
 
     def bind_event_store(self, event_store) -> None:
         self._event_store = event_store
 
     def bind_containment_registry(self, registry) -> None:
         self._containment_registry = registry
+
+    def bind_topology(self, edges, monitors: list[str] | None = None) -> None:
+        """Bind strategy routing constraints and passive monitor identities."""
+        edge_set = {(edge.source, edge.target) for edge in edges}
+        for edge in edges:
+            if edge.edge_type == "bidirectional":
+                edge_set.add((edge.target, edge.source))
+        self._allowed_edges = edge_set or None
+        self._topology_monitors = tuple(monitors or [])
 
     @property
     def event_store(self):
@@ -112,6 +123,16 @@ class MessageBus:
                 }
             )
 
+        if self._topology_monitors:
+            event = event.model_copy(
+                update={
+                    "metadata": {
+                        **event.metadata,
+                        "topology_monitors": list(self._topology_monitors),
+                    }
+                }
+            )
+
         inspected_event: AgentEvent | None = event
 
         for monitor in self._monitors:
@@ -121,6 +142,24 @@ class MessageBus:
 
         if inspected_event is None:
             return None
+
+        if (
+            self._allowed_edges is not None
+            and (inspected_event.source_node, inspected_event.target_node)
+            not in self._allowed_edges
+        ):
+            inspected_event = inspected_event.model_copy(
+                update={
+                    "status": EventStatus.QUARANTINED,
+                    "action_taken": ActionTaken.BLOCK,
+                    "severity": EventSeverity.CRITICAL,
+                    "metadata": {
+                        **inspected_event.metadata,
+                        "topology_blocked": True,
+                        "topology_reason": "edge is not declared by the strategy",
+                    },
+                }
+            )
 
         # Containment check: intercept BEFORE store/broadcast so downstream
         # only sees the blocked version.

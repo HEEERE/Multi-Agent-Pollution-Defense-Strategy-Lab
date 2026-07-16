@@ -1,6 +1,7 @@
 import axios, { AxiosError, type AxiosRequestConfig } from "axios";
 import type {
   AgentEvent,
+  AuthSession,
   BenchmarkReport,
   ContainmentStatus,
   DefenseDecisionResponse,
@@ -24,6 +25,7 @@ const client = axios.create({
   baseURL: import.meta.env.VITE_API_BASE_URL ?? "",
   timeout: 60_000,
   headers: { "Content-Type": "application/json" },
+  withCredentials: true,
 });
 
 async function request<T>(config: AxiosRequestConfig): Promise<T> {
@@ -41,6 +43,15 @@ async function request<T>(config: AxiosRequestConfig): Promise<T> {
 }
 
 export const api = {
+  getAuthSession: () => request<AuthSession>({ url: "/api/auth/session" }),
+  createAuthSession: (apiKey: string) =>
+    request<AuthSession>({
+      url: "/api/auth/session",
+      method: "POST",
+      data: { api_key: apiKey },
+    }),
+  deleteAuthSession: () =>
+    request<AuthSession>({ url: "/api/auth/session", method: "DELETE" }),
   getHealth: () => request<Health>({ url: "/health" }),
   getPlatformConfig: () =>
     request<PlatformConfig>({ url: "/api/platform/config" }),

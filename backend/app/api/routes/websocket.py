@@ -3,6 +3,7 @@
 from fastapi import APIRouter, WebSocket, WebSocketDisconnect
 
 from app.schemas import AgentEvent, EventSeverity, EventStatus, EventType
+from app.core.auth import websocket_is_authenticated
 from app.websocket_manager import websocket_manager
 
 router = APIRouter()
@@ -10,6 +11,9 @@ router = APIRouter()
 
 @router.websocket("/ws/events")
 async def events_websocket(websocket: WebSocket) -> None:
+    if not websocket_is_authenticated(websocket):
+        await websocket.close(code=4401, reason="authentication required")
+        return
     await websocket_manager.connect(websocket)
     await websocket_manager.send_personal_message(
         websocket,
@@ -33,6 +37,9 @@ async def events_websocket(websocket: WebSocket) -> None:
 
 @router.websocket("/ws/runs/{run_id}")
 async def run_events_websocket(websocket: WebSocket, run_id: str) -> None:
+    if not websocket_is_authenticated(websocket):
+        await websocket.close(code=4401, reason="authentication required")
+        return
     await websocket_manager.connect(websocket, room_id=run_id)
     try:
         while True:

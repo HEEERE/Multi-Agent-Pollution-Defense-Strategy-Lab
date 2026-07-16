@@ -1,15 +1,16 @@
-import json
 from time import time
 
+from app.defense.manager import create_defense_coordinator
 from app.detectors.factory import create_pipeline
 from app.event_store import EventStore
-from app.experiments.metrics import MetricsComputer
+from app.experiments.metrics import AggregateMetrics, MetricsComputer
 from app.llm.factory import get_llm_client
 from app.llm.base import LLMClient
 from app.message_bus import MessageBus, clear_run_context, set_run_context
+from app.policy.engine import PolicyEngine
 from app.schemas import (
-    AgentEvent,
     ExperimentConfig,
+    ExperimentMetrics,
     ExperimentRun,
     ExperimentStatus,
 )
@@ -47,32 +48,44 @@ class ExperimentRunner:
         })
 
         try:
-            bus = MessageBus()
-            bus.bind_event_store(self.event_store)
-
-            # Build detector pipeline
-            if config.detector_pipeline.detectors:
-                pipeline = create_pipeline(config.detector_pipeline, self.llm_client, bus)
-                bus.attach_monitor(pipeline.inspect)
-
-            # Enter run context so all events automatically carry run_id
             run_id = config.metadata.get("run_id") if config.metadata else None
             if run_id:
                 set_run_context(run_id)
 
-            # Run simulation
-            engine = SimulationEngine(bus, self.llm_client)
-            events = await engine.run_experiment(config)
+            metrics_list: list[ExperimentMetrics] = []
+            trace_ids: list[str] = []
+            policies = config.metadata.get("policies", []) if config.metadata else []
 
-            # Persist events
-            for e in events:
-                await self.event_store.store_event(e)
+            for iteration in range(config.num_runs):
+                bus = MessageBus()
+                bus.bind_event_store(self.event_store)
+                coordinator = create_defense_coordinator(bus, self.event_store)
+                bus.bind_containment_registry(coordinator.containment_registry)
 
-            # Compute metrics
-            metrics = MetricsComputer(events, config.ground_truth).compute()
+                if config.detector_pipeline.detectors or policies:
+                    pipeline = create_pipeline(
+                        config.detector_pipeline,
+                        self.llm_client,
+                        bus,
+                        defense_coordinator=coordinator,
+                        policy_engine=PolicyEngine(policies or None),
+                    )
+                    bus.attach_monitor(pipeline.inspect)
 
-            run.trace_id = events[0].trace_id if events else None
-            run.metrics = metrics
+                engine = SimulationEngine(bus, self.llm_client)
+                events = await engine.run_experiment(config)
+                metrics = MetricsComputer(events, config.ground_truth).compute()
+                metrics.metadata.update({"iteration": iteration + 1})
+                metrics_list.append(metrics)
+                if events:
+                    trace_ids.append(events[0].trace_id)
+
+            run.trace_id = trace_ids[0] if trace_ids else None
+            run.metrics = self._aggregate_metrics(
+                metrics_list,
+                trace_ids,
+                seed=int(config.metadata.get("seed", 0)) if config.metadata else 0,
+            )
             run.status = ExperimentStatus.COMPLETED
             run.completed_at = time()
 
@@ -98,3 +111,37 @@ class ExperimentRunner:
         })
 
         return run
+
+    @staticmethod
+    def _aggregate_metrics(
+        metrics_list: list[ExperimentMetrics],
+        trace_ids: list[str],
+        seed: int,
+    ) -> ExperimentMetrics:
+        if not metrics_list:
+            return ExperimentMetrics(metadata={"n_runs": 0, "trace_ids": []})
+
+        aggregate = AggregateMetrics(
+            [item.model_dump(mode="json") for item in metrics_list],
+            seed=seed,
+        ).compute()
+        integer_fields = {
+            "propagation_depth",
+            "total_events",
+            "threats_detected",
+            "threats_blocked",
+            "cascade_depth",
+        }
+        values: dict = {}
+        for field in ExperimentMetrics.model_fields:
+            if field == "metadata":
+                continue
+            mean_value = aggregate["fields"].get(field, {}).get("mean", 0)
+            values[field] = round(mean_value) if field in integer_fields else mean_value
+        values["metadata"] = {
+            "n_runs": len(metrics_list),
+            "trace_ids": trace_ids,
+            "seed": seed,
+            "aggregate": aggregate,
+        }
+        return ExperimentMetrics(**values)

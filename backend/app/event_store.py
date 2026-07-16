@@ -526,6 +526,17 @@ class EventStore:
         )
         return [dict(row) for row in await cursor.fetchall()]
 
+    async def get_strategy_version(
+        self, strategy_id: str, version: int
+    ) -> dict | None:
+        conn = await self._get_conn()
+        cursor = await conn.execute(
+            "SELECT * FROM strategy_versions WHERE strategy_id = ? AND version = ?",
+            (strategy_id, version),
+        )
+        row = await cursor.fetchone()
+        return dict(row) if row else None
+
     # ── Run persistence ────────────────────────────────────
 
     async def store_run(self, run: dict) -> None:
@@ -587,6 +598,40 @@ class EventStore:
             f"UPDATE runs SET {sets} WHERE run_id = ?", values
         )
         await conn.commit()
+
+    async def requeue_interrupted_runs(self) -> int:
+        conn = await self._get_conn()
+        cursor = await conn.execute(
+            "UPDATE runs SET status = 'queued', started_at = NULL, finished_at = NULL, "
+            "error = 'requeued after server restart' WHERE status = 'running'"
+        )
+        await conn.commit()
+        return cursor.rowcount
+
+    async def claim_next_queued_run(self) -> dict | None:
+        """Atomically claim the oldest queued run for a single worker."""
+        conn = await self._get_conn()
+        try:
+            await conn.execute("BEGIN IMMEDIATE")
+            cursor = await conn.execute(
+                "SELECT run_id FROM runs WHERE status = 'queued' "
+                "ORDER BY created_at ASC LIMIT 1"
+            )
+            row = await cursor.fetchone()
+            if row is None:
+                await conn.commit()
+                return None
+            run_id = row["run_id"]
+            await conn.execute(
+                "UPDATE runs SET status = 'running', started_at = unixepoch(), error = NULL "
+                "WHERE run_id = ? AND status = 'queued'",
+                (run_id,),
+            )
+            await conn.commit()
+            return await self.get_run(run_id)
+        except Exception:
+            await conn.rollback()
+            raise
 
     # ── Run event persistence ────────────────────────────────────
 

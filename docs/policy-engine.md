@@ -111,10 +111,10 @@ Add an entry to `backend/app/policy/default_policies.py`:
 
 ### Testing a Policy
 
-Use the `/api/policies/evaluate` endpoint:
+Use the `/api/v1/policies/evaluate` endpoint:
 
 ```bash
-curl -X POST http://127.0.0.1:8000/api/policies/evaluate \
+curl -X POST http://127.0.0.1:8000/api/v1/policies/evaluate \
   -H "Content-Type: application/json" \
   -d '{
     "event_id": "test_001",
@@ -144,5 +144,5 @@ Response:
 ### Listing Active Policies
 
 ```bash
-curl http://127.0.0.1:8000/api/policies
+curl http://127.0.0.1:8000/api/v1/policies
 ```

@@ -139,6 +139,20 @@ class DefenseCoordinator:
         decision: JointDefenseDecision,
     ) -> AgentEvent:
         action = decision.final_action
+        action_priority = {
+            "none": 0,
+            "allow": 0,
+            "alert": 1,
+            "decoy": 1,
+            "challenge": 2,
+            "quarantine": 3,
+            "isolate": 4,
+            "block": 5,
+            "recover": 0,
+        }
+        current_action = event.action_taken.value
+        if action_priority.get(current_action, 0) > action_priority.get(action, 0):
+            action = current_action
         status = event.status
         action_taken = event.action_taken
         severity = event.severity

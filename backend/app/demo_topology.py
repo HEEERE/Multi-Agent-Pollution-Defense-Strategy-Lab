@@ -2,12 +2,11 @@ from app.agents.base import BaseAgent
 from app.agents.auditor import AuditorAgent
 from app.agents.honeypot import HoneypotAgent
 from app.agents.red_team import RedTeamAgent
-from app.event_store import EventStore
+from app.event_store import get_event_store
 from app.gateway.base import BaseGateway
 from app.llm.factory import get_llm_client
 from app.message_bus import message_bus
 from app.schemas import AgentEvent
-from app.settings_manager import init_settings_manager
 from app.tools.base import BaseTool
 from app.tools.fake_tool import FakeTool
 from app.websocket_manager import websocket_manager
@@ -70,10 +69,8 @@ message_bus.attach_broadcast_hook(websocket_manager.broadcast)
 # ── Helpers ────────────────────────────────────────────────────
 
 async def init_event_store() -> None:
-    store = EventStore()
-    await store._get_conn()
+    store = await get_event_store()
     message_bus.bind_event_store(store)
-    await init_settings_manager()
 
 
 async def run_gateway_to_agent(payload: str) -> AgentEvent | None:

@@ -1,5 +1,5 @@
-import { useQuery } from "@tanstack/react-query";
-import { Bell, CircleHelp, Cpu, Radio, Server } from "lucide-react";
+import { useMutation, useQuery } from "@tanstack/react-query";
+import { Bell, CircleHelp, Cpu, LogOut, Radio, Server } from "lucide-react";
 import { useLocation } from "react-router-dom";
 import { api } from "../../lib/api";
 import { useAppStore } from "../../store/app-store";
@@ -44,6 +44,10 @@ export function Topbar() {
     queryFn: api.getPlatformConfig,
     refetchInterval: 15_000,
   });
+  const logout = useMutation({
+    mutationFn: api.deleteAuthSession,
+    onSuccess: () => window.location.reload(),
+  });
   const root = `/${location.pathname.split("/")[1]}`;
   const title = titles[location.pathname] ?? titles[root] ?? "MAJD-Guard";
 
@@ -73,6 +77,17 @@ export function Topbar() {
         <button type="button" className="btn h-9 w-9 px-0" title="帮助">
           <CircleHelp className="size-4" />
         </button>
+        {platform.data?.auth_enabled && (
+          <button
+            type="button"
+            className="btn h-9 w-9 px-0"
+            title="退出登录"
+            disabled={logout.isPending}
+            onClick={() => logout.mutate()}
+          >
+            <LogOut className="size-4" />
+          </button>
+        )}
         <div className="ml-1 grid size-9 place-items-center rounded-full border border-slate-600 bg-ink-800 text-xs font-semibold text-slate-200">
           SE
         </div>

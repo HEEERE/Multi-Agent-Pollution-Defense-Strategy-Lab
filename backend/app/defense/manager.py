@@ -33,34 +33,40 @@ def get_containment_registry() -> ContainmentRegistry:
     return _containment_registry
 
 
+def create_defense_coordinator(bus=None, event_store=None) -> DefenseCoordinator:
+    threat_memory = ThreatMemory()
+    containment_registry = ContainmentRegistry()
+    defenders = [
+        PromptGuardAgent(weight=DEFENDER_WEIGHTS.get("prompt_guard", 1.2)),
+        RAGGuardAgent(weight=DEFENDER_WEIGHTS.get("rag_guard", 1.1)),
+        ToolGuardAgent(weight=DEFENDER_WEIGHTS.get("tool_guard", 1.3)),
+        MemoryGuardAgent(weight=DEFENDER_WEIGHTS.get("memory_guard", 1.2)),
+        PolicyGuardAgent(
+            policy_engine=PolicyEngine(),
+            weight=DEFENDER_WEIGHTS.get("policy_guard", 1.4),
+        ),
+        PropagationGuardAgent(
+            weight=DEFENDER_WEIGHTS.get("propagation_guard", 1.5),
+        ),
+        HoneypotGuardAgent(
+            weight=DEFENDER_WEIGHTS.get("honeypot_guard", 0.8),
+        ),
+    ]
+    return DefenseCoordinator(
+        defenders=defenders,
+        bus=bus,
+        event_store=event_store,
+        threat_memory=threat_memory,
+        containment_planner=ContainmentPlanner(threat_memory=threat_memory),
+        containment_registry=containment_registry,
+        recovery_agent=RecoveryAgent(threat_memory=threat_memory),
+    )
+
+
 def get_defense_coordinator(bus=None, event_store=None) -> DefenseCoordinator:
     global _defense_coordinator
     if _defense_coordinator is None:
-        defenders = [
-            PromptGuardAgent(weight=DEFENDER_WEIGHTS.get("prompt_guard", 1.2)),
-            RAGGuardAgent(weight=DEFENDER_WEIGHTS.get("rag_guard", 1.1)),
-            ToolGuardAgent(weight=DEFENDER_WEIGHTS.get("tool_guard", 1.3)),
-            MemoryGuardAgent(weight=DEFENDER_WEIGHTS.get("memory_guard", 1.2)),
-            PolicyGuardAgent(
-                policy_engine=PolicyEngine(),
-                weight=DEFENDER_WEIGHTS.get("policy_guard", 1.4),
-            ),
-            PropagationGuardAgent(
-                weight=DEFENDER_WEIGHTS.get("propagation_guard", 1.5),
-            ),
-            HoneypotGuardAgent(
-                weight=DEFENDER_WEIGHTS.get("honeypot_guard", 0.8),
-            ),
-        ]
-        _defense_coordinator = DefenseCoordinator(
-            defenders=defenders,
-            bus=bus,
-            event_store=event_store,
-            threat_memory=get_threat_memory(),
-            containment_planner=ContainmentPlanner(threat_memory=get_threat_memory()),
-            containment_registry=get_containment_registry(),
-            recovery_agent=RecoveryAgent(threat_memory=get_threat_memory()),
-        )
+        _defense_coordinator = create_defense_coordinator(bus, event_store)
     else:
         if bus is not None:
             _defense_coordinator.bus = bus

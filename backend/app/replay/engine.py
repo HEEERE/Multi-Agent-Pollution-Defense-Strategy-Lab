@@ -22,12 +22,15 @@ class ReplayEngine:
         self._state = ReplayState.PAUSED
 
     def step_forward(self) -> AgentEvent | None:
+        keep_playing = self._state == ReplayState.PLAYING
         self._state = ReplayState.STEPPING
         if self._index < len(self._events):
             event = self._events[self._index]
             self._index += 1
             if self._index >= len(self._events):
                 self._state = ReplayState.COMPLETED
+            elif keep_playing:
+                self._state = ReplayState.PLAYING
             return event
         self._state = ReplayState.COMPLETED
         return None

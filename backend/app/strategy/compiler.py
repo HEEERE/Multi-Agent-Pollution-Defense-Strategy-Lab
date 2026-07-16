@@ -77,7 +77,15 @@ def compile_strategy(
     metadata["run_id"] = run_id
     metadata["strategy_id"] = strategy_id
     metadata["strategy_version"] = strategy_version
-    metadata["policies"] = content.get("policies", [])
+    metadata["policies"] = [
+        {
+            **policy,
+            "name": policy.get("name", policy.get("policy_id", "policy")),
+            "condition": policy.get("condition", {}),
+            "reason": policy.get("reason", "User-defined strategy policy matched."),
+        }
+        for policy in content.get("policies", [])
+    ]
     metadata["detector_settings"] = detector_settings
 
     return ExperimentConfig(

@@ -49,6 +49,7 @@ def create_pipeline(
     llm_client: LLMClient | None = None,
     bus: MessageBus | None = None,
     defense_coordinator=None,
+    policy_engine=None,
 ) -> DetectorPipeline:
     detectors: list[BaseDetector] = []
     for cfg in config.detectors:
@@ -62,7 +63,7 @@ def create_pipeline(
         log_all=config.log_all_detections,
         min_severity_for_llm=config.min_severity_for_llm,
         bus=bus,
-        policy_engine=PolicyEngine(),
+        policy_engine=policy_engine or PolicyEngine(),
         defense_coordinator=defense_coordinator,
     )
 

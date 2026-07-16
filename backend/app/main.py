@@ -1,7 +1,8 @@
-from fastapi import FastAPI
+from fastapi import Depends, FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
 from app.api.routes import (
+    auth,
     benchmark,
     defense,
     events,
@@ -18,6 +19,7 @@ from app.api.routes import (
     traces,
     websocket,
 )
+from app.core.auth import require_api_auth
 from app.core.config import get_cors_origins
 from app.core.lifespan import lifespan
 
@@ -25,7 +27,7 @@ from app.core.lifespan import lifespan
 def create_app() -> FastAPI:
     app = FastAPI(
         title="Multi-Agent Cascading Pollution Detection Platform",
-        version="0.3.0",
+        version="0.4.0",
         description="Research platform for simulating, observing, recording, and replaying "
         "Prompt Injection / RAG context poisoning / Tool pollution in multi-agent systems.",
         lifespan=lifespan,
@@ -39,20 +41,28 @@ def create_app() -> FastAPI:
         allow_headers=["*"],
     )
 
+    protected = [Depends(require_api_auth)]
     app.include_router(health.router, tags=["health"])
-    app.include_router(settings.router, prefix="/api/v1/settings", tags=["settings"])
-    app.include_router(events.router, prefix="/api/v1/events", tags=["events"])
-    app.include_router(tasks.router, prefix="/api/v1/tasks", tags=["tasks"])
-    app.include_router(traces.router, prefix="/api/v1/traces", tags=["traces"])
-    app.include_router(policies.router, prefix="/api/v1/policies", tags=["policies"])
-    app.include_router(playbooks.router, prefix="/api/v1/playbooks", tags=["playbooks"])
-    app.include_router(experiments.router, prefix="/api/v1/experiments", tags=["experiments"])
-    app.include_router(strategies.router, prefix="/api/v1/strategies", tags=["strategies"])
-    app.include_router(runs.router, prefix="/api/v1/runs", tags=["runs"])
-    app.include_router(replay.router, prefix="/api/v1/replay", tags=["replay"])
-    app.include_router(benchmark.router, prefix="/api/v1/benchmark", tags=["benchmark"])
-    app.include_router(honeypot.router, prefix="/api/v1/honeypot", tags=["honeypot"])
-    app.include_router(defense.router, prefix="/api/v1/defense", tags=["defense"])
+    app.include_router(auth.router)
+    protected_routers = [
+        (settings.router, "/api/v1/settings", ["settings"]),
+        (events.router, "/api/v1/events", ["events"]),
+        (tasks.router, "/api/v1/tasks", ["tasks"]),
+        (traces.router, "/api/v1/traces", ["traces"]),
+        (policies.router, "/api/v1/policies", ["policies"]),
+        (playbooks.router, "/api/v1/playbooks", ["playbooks"]),
+        (experiments.router, "/api/v1/experiments", ["experiments"]),
+        (strategies.router, "/api/v1/strategies", ["strategies"]),
+        (runs.router, "/api/v1/runs", ["runs"]),
+        (replay.router, "/api/v1/replay", ["replay"]),
+        (benchmark.router, "/api/v1/benchmark", ["benchmark"]),
+        (honeypot.router, "/api/v1/honeypot", ["honeypot"]),
+        (defense.router, "/api/v1/defense", ["defense"]),
+    ]
+    for router, prefix, tags in protected_routers:
+        app.include_router(
+            router, prefix=prefix, tags=tags, dependencies=protected
+        )
     app.include_router(websocket.router)
 
     return app

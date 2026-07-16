@@ -46,7 +46,24 @@ export function Replay() {
     queryFn: () => api.getTrace(traceId),
     enabled: Boolean(traceId),
   });
+  useEffect(() => {
+    if (!session || session.state !== "playing") return;
+    const timer = window.setTimeout(async () => {
+      try {
+        setSession(await api.stepReplay(session.session_id));
+      } catch (error) {
+        addToast(getErrorMessage(error), "error");
+      }
+    }, 1_000 / session.speed_multiplier);
+    return () => window.clearTimeout(timer);
+  }, [addToast, session]);
   const currentEvent = session?.event ?? events.data?.[session?.current_index ?? 0];
+  const displayedPosition = session?.total_events
+    ? Math.min(
+        session.current_index + (session.event ? 0 : 1),
+        session.total_events,
+      )
+    : 0;
 
   return (
     <div className="space-y-4 p-5">
@@ -103,7 +120,7 @@ export function Replay() {
             className="min-w-64 flex-1 accent-cyan-400"
           />
           <span className="w-24 text-center font-mono text-xs text-slate-400">
-            {(session?.current_index ?? 0) + 1} / {session?.total_events ?? 0}
+            {displayedPosition} / {session?.total_events ?? 0}
           </span>
           <select
             className="input w-24"

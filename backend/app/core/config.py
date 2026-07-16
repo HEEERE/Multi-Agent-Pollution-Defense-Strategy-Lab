@@ -6,6 +6,13 @@ from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
 class Settings(BaseSettings):
+    majd_api_key: str = Field(default="", validation_alias="MAJD_API_KEY")
+    auth_session_ttl_seconds: int = Field(
+        default=28800,
+        ge=300,
+        le=604800,
+        validation_alias="AUTH_SESSION_TTL_SECONDS",
+    )
     mimo_api_key: str = Field(default="", validation_alias="MIMO_API_KEY")
     mimo_base_url: HttpUrl = Field(
         default="https://token-plan-cn.xiaomimimo.com/v1",
@@ -22,6 +29,10 @@ class Settings(BaseSettings):
     @property
     def llm_ready(self) -> bool:
         return self.llm_enabled and bool(self.mimo_api_key)
+
+    @property
+    def auth_enabled(self) -> bool:
+        return bool(self.majd_api_key)
 
 
 @lru_cache

@@ -57,6 +57,12 @@ export interface PlatformConfig {
   llm_model: string;
   llm_enabled: boolean;
   llm_ready: boolean;
+  auth_enabled: boolean;
+}
+
+export interface AuthSession {
+  auth_enabled: boolean;
+  authenticated: boolean;
 }
 
 export interface StrategyRead {

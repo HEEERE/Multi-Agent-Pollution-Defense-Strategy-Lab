@@ -51,7 +51,8 @@ export function StrategyLab() {
   const queryClient = useQueryClient();
   const navigate = useNavigate();
   const addToast = useAppStore((state) => state.addToast);
-  const [selectedId, setSelectedId] = useState<string | null>(null);
+  // undefined means initial load; null is an intentional unsaved draft.
+  const [selectedId, setSelectedId] = useState<string | null | undefined>();
   const [name, setName] = useState("demo-strategy");
   const [description, setDescription] = useState("用于提示注入传播防御的演示策略。");
   const [tags, setTags] = useState("提示注入, 联合防御");
@@ -69,7 +70,7 @@ export function StrategyLab() {
   });
 
   useEffect(() => {
-    if (!selectedId && strategies.data?.length) {
+    if (selectedId === undefined && strategies.data?.length) {
       setSelectedId(strategies.data[0].strategy_id);
     }
   }, [selectedId, strategies.data]);
@@ -94,6 +95,16 @@ export function StrategyLab() {
     }
   }, [editorValue]);
   const localIssues = parsedContent ? localValidate(parsedContent) : ["JSON 语法无效"];
+  const isDirty = useMemo(() => {
+    if (!selected || !parsedContent) return true;
+    const normalizedTags = tags.split(",").map((tag) => tag.trim()).filter(Boolean);
+    return (
+      name.trim() !== selected.name ||
+      description.trim() !== selected.description ||
+      JSON.stringify(normalizedTags) !== JSON.stringify(selected.tags) ||
+      JSON.stringify(parsedContent) !== JSON.stringify(selected.content)
+    );
+  }, [description, name, parsedContent, selected, tags]);
 
   const validate = useMutation({
     mutationFn: async () => {
@@ -154,13 +165,22 @@ export function StrategyLab() {
     queryKey: ["run", runId],
     queryFn: () => api.getRun(runId!),
     enabled: Boolean(runId),
-    refetchInterval: runId ? 1_500 : false,
+    refetchInterval: (query) =>
+      ["completed", "failed", "cancelled"].includes(
+        query.state.data?.status ?? "",
+      )
+        ? false
+        : 1_500,
   });
   const runEvents = useQuery({
     queryKey: ["run-events", runId],
     queryFn: () => api.getRunEvents(runId!),
     enabled: Boolean(runId),
-    refetchInterval: runId ? 1_500 : false,
+    refetchInterval: ["completed", "failed", "cancelled"].includes(
+      runQuery.data?.status ?? "",
+    )
+      ? false
+      : 1_500,
   });
   const runMetrics = useQuery({
     queryKey: ["run-metrics", runId],
@@ -281,7 +301,13 @@ export function StrategyLab() {
           <button type="button" onClick={() => save.mutate()} disabled={save.isPending} className="btn">
             <Save className="size-4" />保存
           </button>
-          <button type="button" onClick={() => run.mutate()} disabled={!selectedId || run.isPending} className="btn-primary">
+          <button
+            type="button"
+            onClick={() => run.mutate()}
+            disabled={!selectedId || isDirty || run.isPending}
+            title={isDirty ? "请先保存当前修改后再运行" : undefined}
+            className="btn-primary"
+          >
             <Play className="size-4" />运行
           </button>
         </div>
