@@ -23,17 +23,20 @@ from app.research.scale.analysis import (
 from app.research.scale.graph import (
     Derivation,
     GenSpec,
+    Goal,
     Hypergraph,
     Integrity,
     Intervention,
     InterventionKind,
     Sink,
+    SupportGroup,
     Version,
     VersionKind,
     generate,
 )
 from app.research.scale.solvers import (
     brute_force_cover,
+    exact_cover,
     greedy_cover,
     verify_cover,
 )
@@ -251,6 +254,29 @@ class TestSolvers:
         assert res.cost == pytest.approx(1.0)
         assert verify_cover(g, witnesses, res.selected)
 
+    def test_branch_and_bound_exact_matches_independent_brute_force(self):
+        for seed in range(5):
+            g = generate(
+                GenSpec(context_size=5, hops=3, n_sinks=2, seed=seed),
+                conservative=True,
+            )
+            witnesses = enumerate_witnesses(g).witnesses
+            oracle = brute_force_cover(g, witnesses)
+            exact = exact_cover(g, witnesses)
+            assert exact.status == "optimal"
+            assert exact.cost == pytest.approx(oracle.cost)
+            assert verify_cover(g, witnesses, exact.selected)
+
+    def test_exact_budget_exhaustion_is_not_reported_optimal(self):
+        g = generate(
+            GenSpec(context_size=6, hops=4, n_sinks=2, seed=2),
+            conservative=True,
+        )
+        witnesses = enumerate_witnesses(g).witnesses
+        result = exact_cover(g, witnesses, max_nodes=1)
+        assert result.status in {"budget_exhausted", "feasible"}
+        assert result.proven_optimal is False
+
     def test_greedy_covers_everything_and_is_never_cheaper_than_exact(self):
         for seed in range(6):
             g = generate(
@@ -298,6 +324,22 @@ class TestSolvers:
         witnesses = enumerate_witnesses(g).witnesses
         assert verify_cover(g, witnesses, set()) is False
         assert verify_cover(g, witnesses, {"rv_v3"}) is False
+
+
+class TestRepairCanaries:
+    def test_attack_does_not_recur_and_benign_support_survives(self):
+        from app.research.scale.canary import verify_canaries
+
+        g = _manual_chain()
+        g.goals["benign"] = Goal("benign", required=True)
+        g.support["support_benign"] = SupportGroup(
+            "support_benign", "benign", ("v4",), verified=True
+        )
+        witnesses = enumerate_witnesses(g).witnesses
+        safe = verify_canaries(g, witnesses, {"rv_v0"})
+        assert safe.passed
+        unsafe = verify_canaries(g, witnesses, set())
+        assert unsafe.recurrent_attack_roots == {"q0"}
 
 
 class TestGenerator:

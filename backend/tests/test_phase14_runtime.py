@@ -1,8 +1,10 @@
 from __future__ import annotations
 
+import asyncio
+import time
 import pytest
 
-from app.actions import ActionArgument, ActionGateway, ActionRequest, DeterministicPolicy, EffectClass, SecurityDecision, estimate_human_approval_cost
+from app.actions import ActionArgument, ActionBoundaryQueue, ActionGateway, ActionRequest, DeterministicPolicy, EffectClass, SecurityDecision, estimate_human_approval_cost
 from app.provenance import ProvenanceLedger
 from app.provenance.models import ArtifactKind, ArtifactState, ArtifactVersion, Derivation, ProvenanceLevel, StateTransition, SupportGroup
 from app.provenance.projection import build_conservative, build_tight
@@ -194,3 +196,83 @@ def test_human_approval_gate_estimate_is_conservative():
     )
     assert estimate.estimated_reviews == 5
     assert estimate.admitted is False
+
+
+@pytest.mark.asyncio
+async def test_boundary_queue_serializes_overlap_and_allows_disjoint_scope():
+    ledger = ProvenanceLedger()
+    ledger.ensure_run("r1")
+    queue = ActionBoundaryQueue(ledger)
+
+    def request(action_id: str, scope: str) -> ActionRequest:
+        return ActionRequest(
+            action_id, "r1", action_id, "tool", "write",
+            resource_scope=scope, effect_class=EffectClass.E1,
+        )
+
+    first = await queue.acquire(request("a1", "shared"))
+    overlapping = asyncio.create_task(queue.acquire(request("a2", "shared")))
+    await asyncio.sleep(0)
+    assert overlapping.done() is False
+    disjoint = await asyncio.wait_for(queue.acquire(request("a3", "other")), 0.2)
+    assert disjoint is not None
+    await queue.release(disjoint)
+    await queue.release(first)
+    second = await asyncio.wait_for(overlapping, 0.2)
+    assert second is not None
+    await queue.release(second)
+
+
+@pytest.mark.asyncio
+async def test_boundary_queue_records_deadline_and_quarantine_failures():
+    ledger = ProvenanceLedger()
+    ledger.ensure_run("r1")
+    queue = ActionBoundaryQueue(ledger)
+    expired = ActionRequest(
+        "expired", "r1", "agent", "tool", "write",
+        effect_class=EffectClass.E1, deadline=time.time() - 1,
+    )
+    assert await queue.acquire(expired) is None
+    await queue.quarantine_agent("blocked-agent")
+    blocked = ActionRequest(
+        "blocked", "r1", "blocked-agent", "tool", "write",
+        effect_class=EffectClass.E1,
+    )
+    assert await queue.acquire(blocked) is None
+    metrics = ledger.metrics("r1")
+    assert metrics["deadline_miss_rate"] == 1
+    assert metrics["starvation_count"] == 2
+
+
+def test_required_goal_replay_receives_clean_inputs_and_never_reactivates_old_versions():
+    ledger = ProvenanceLedger()
+    engine = RunEngine(ledger)
+    context = engine.create_run(RunManifest("r1"))
+    bad = context.append_artifact(
+        artifact_id="bad", kind=ArtifactKind.MESSAGE, value="bad", integrity="low"
+    )
+    clean = context.append_artifact(
+        artifact_id="clean", kind=ArtifactKind.MESSAGE, value="ok", integrity="high"
+    )
+    sink = context.append_artifact(
+        artifact_id="sink", kind=ArtifactKind.ARGUMENT, value="send", integrity="high"
+    )
+    context.derive(sink, [bad], activity_id="unsafe")
+    calls = []
+
+    def replay(goal, clean_inputs):
+        calls.append((goal, clean_inputs))
+        return context.append_artifact(
+            artifact_id=f"replay:{goal}", kind=ArtifactKind.SUMMARY,
+            value="rebuilt", integrity="high", metadata={"clean_inputs": clean_inputs},
+        ).version_id
+
+    result = context.state_controller.repair(
+        sink_versions={sink.version_id},
+        revoked_versions={bad.version_id},
+        required_goals={"goal"},
+        replay=replay,
+    )
+    assert calls == [("goal", (clean.version_id,))]
+    assert result["replayed"][0] != bad.version_id
+    assert ledger.current_state(bad.version_id) is ArtifactState.INVALIDATED

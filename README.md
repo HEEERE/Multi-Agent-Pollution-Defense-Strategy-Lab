@@ -92,7 +92,7 @@ npm run typecheck
 npm test -- --run
 ```
 
-The tests cover ledger append-only behavior, snapshot/TOCTOU checks, P0/P1 graph separation, action contracts, dry-run enforcement, queue quarantine/deadlines, origin non-amplification, certificate/reissue bounds, retention labels, repair invariants, mutation rejection, and API/runtime regressions.
+The tests cover ledger append-only behavior, snapshot/TOCTOU checks, P0/P1 graph separation, action contracts, dry-run enforcement, overlapping/disjoint action queues, origin non-amplification, certificate/reissue bounds, exact-cover/brute-force agreement, attack/benign canaries, required-goal replay, retention labels, repair invariants, mutation rejection, and API/runtime regressions.
 
 ## API surface
 

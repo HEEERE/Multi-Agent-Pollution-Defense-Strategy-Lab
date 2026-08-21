@@ -90,6 +90,60 @@ def brute_force_cover(
     return SolveResult("optimal", best, best_cost, elapsed, examined)
 
 
+def exact_cover(
+    g: Hypergraph,
+    witnesses: list[Witness],
+    *,
+    max_nodes: int = 2_000_000,
+) -> SolveResult:
+    """Solve the binary witness-cover model with branch-and-bound.
+
+    This is an independent exact path from ``brute_force_cover``. Each
+    intervention is a binary variable and every witness contributes the ILP
+    constraint ``sum(x_i for i in Break(W)) >= 1``. The implementation branches
+    on one uncovered constraint at a time, which is sufficient for the bounded
+    Phase 4 mechanism graphs without adding a native solver dependency.
+    """
+    started = perf_counter()
+    covers = _coverage_map(g, witnesses)
+    if not covers:
+        return SolveResult("optimal", set(), 0.0, (perf_counter() - started) * 1000)
+    if any(not cover for cover in covers):
+        return SolveResult("unsatisfiable", set(), float("inf"), (perf_counter() - started) * 1000)
+
+    best: set[str] | None = None
+    best_cost = float("inf")
+    examined = 0
+
+    def search(selected: set[str], cost: float) -> None:
+        nonlocal best, best_cost, examined
+        examined += 1
+        if examined > max_nodes or cost >= best_cost:
+            return
+        uncovered = [cover for cover in covers if not (selected & cover)]
+        if not uncovered:
+            best, best_cost = set(selected), cost
+            return
+        # The smallest constraint has the lowest branching factor. Stable cost
+        # ordering makes replays deterministic for the same graph snapshot.
+        branch = min(uncovered, key=lambda cover: (len(cover), sorted(cover)))
+        for iid in sorted(branch, key=lambda item: (g.interventions[item].cost, item)):
+            search(selected | {iid}, cost + g.interventions[iid].cost)
+            if examined > max_nodes:
+                return
+
+    search(set(), 0.0)
+    elapsed = (perf_counter() - started) * 1000
+    if examined > max_nodes:
+        return SolveResult(
+            "feasible" if best is not None else "budget_exhausted",
+            best or set(), best_cost, elapsed, examined,
+        )
+    if best is None:
+        return SolveResult("unsatisfiable", set(), float("inf"), elapsed, examined)
+    return SolveResult("optimal", best, best_cost, elapsed, examined)
+
+
 def greedy_cover(g: Hypergraph, witnesses: list[Witness]) -> SolveResult:
     """Weighted set-cover greedy: minimise cost / newly-covered."""
     started = perf_counter()

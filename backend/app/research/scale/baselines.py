@@ -46,7 +46,7 @@ from app.research.scale.graph import (
     VersionKind,
 )
 from app.research.scale.solvers import (
-    brute_force_cover,
+    exact_cover,
     greedy_cover,
     mincut_cover,
 )
@@ -400,7 +400,7 @@ def b9_prime_naive_compose(g: Hypergraph, witnesses: list[Witness]) -> Outcome:
 def b10_exact(
     g: Hypergraph, witnesses: list[Witness], *, budget: int = 300_000
 ) -> Outcome:
-    res = brute_force_cover(g, witnesses, max_subsets=budget)
+    res = exact_cover(g, witnesses, max_nodes=budget)
     return score(
         g,
         witnesses,

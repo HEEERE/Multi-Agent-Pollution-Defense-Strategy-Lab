@@ -260,7 +260,7 @@ AND 当前 snapshot hash == 证书 snapshot hash
 
 ```text
 backend/.venv/Scripts/python.exe -m pytest backend/tests -q -p no:cacheprovider
-346 passed, 1 skipped
+352 passed, 1 skipped
 
 python -m compileall -q backend/app
 通过
