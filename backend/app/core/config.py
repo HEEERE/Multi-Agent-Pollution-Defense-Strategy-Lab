@@ -24,6 +24,30 @@ class Settings(BaseSettings):
     llm_temperature: float = Field(default=0.2, validation_alias="LLM_TEMPERATURE")
     llm_enabled: bool = Field(default=False, validation_alias="LLM_ENABLED")
 
+    # Capability envelope of the configured model. Declared rather than probed
+    # so a request can be rejected locally instead of failing at the provider,
+    # and so budget accounting has a ceiling to work with.
+    #
+    # Note the split: `llm_max_tokens` is the per-call default and should stay
+    # small, while `llm_max_output_ceiling` is what the model *can* do. Setting
+    # the default to the ceiling makes every routine agent turn generate tens of
+    # thousands of tokens, which stalls a run rather than failing it.
+    llm_max_output_ceiling: int = Field(
+        default=48_000, validation_alias="LLM_MAX_OUTPUT_CEILING"
+    )
+    llm_max_input_tokens: int = Field(
+        default=200_000, validation_alias="LLM_MAX_INPUT_TOKENS"
+    )
+    llm_tool_calling_enabled: bool = Field(
+        default=False, validation_alias="LLM_TOOL_CALLING_ENABLED"
+    )
+    llm_thinking_enabled: bool = Field(
+        default=False, validation_alias="LLM_THINKING_ENABLED"
+    )
+    llm_reasoning_effort: str = Field(
+        default="medium", validation_alias="LLM_REASONING_EFFORT"
+    )
+
     model_config = SettingsConfigDict(env_file=".env", env_file_encoding="utf-8", extra="ignore")
 
     @property

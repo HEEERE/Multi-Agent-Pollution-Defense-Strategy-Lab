@@ -55,10 +55,14 @@ fake_kg = FakeTool("FakeTool_KG", message_bus, tool_type="kg")
 
 
 def rebuild_runtime_pipeline() -> None:
-    from app.defense.manager import get_containment_registry
+    from app.defense.manager import get_defense_coordinator
     from app.pipeline_manager import get_pipeline_manager
 
-    message_bus.bind_containment_registry(get_containment_registry())
+    # Bind the coordinator's own registry rather than a second global one, so the
+    # demo bus enforces exactly the containment state the coordinator applies
+    # (F-C3).
+    coordinator = get_defense_coordinator(bus=message_bus)
+    message_bus.bind_containment_registry(coordinator.containment_registry)
     get_pipeline_manager().rebuild()
 
 

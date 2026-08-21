@@ -4,10 +4,22 @@ from contextvars import ContextVar
 from time import time
 
 from app.schemas import ActionTaken, AgentEvent, EventSeverity, EventStatus
+from app.provenance.models import ArtifactState
 
 EventHandler = Callable[[AgentEvent], Awaitable[None]]
 MonitorHook = Callable[[AgentEvent], Awaitable[AgentEvent | None]]
 BroadcastHook = Callable[[AgentEvent], Awaitable[None]]
+
+
+async def _noop_action():
+    return None
+
+# Actions and statuses that stop delivery. ALERT/CHALLENGE/DECOY are observation
+# outcomes and stay deliverable; only these mean "contained".
+_CONTAINED_ACTIONS = frozenset(
+    {ActionTaken.BLOCK, ActionTaken.ISOLATE, ActionTaken.QUARANTINE}
+)
+_CONTAINED_STATUSES = frozenset({EventStatus.QUARANTINED, EventStatus.ISOLATED})
 
 _current_trace_id: ContextVar[str | None] = ContextVar("trace_id", default=None)
 _pending_events: ContextVar[list[AgentEvent] | None] = ContextVar("pending_events", default=None)
@@ -61,12 +73,29 @@ class MessageBus:
         self._containment_registry = None
         self._allowed_edges: set[tuple[str, str]] | None = None
         self._topology_monitors: tuple[str, ...] = ()
+        self._provenance_ledger = None
+        self._provenance_run_id: str | None = None
+        self._action_gateway = None
 
     def bind_event_store(self, event_store) -> None:
         self._event_store = event_store
 
     def bind_containment_registry(self, registry) -> None:
         self._containment_registry = registry
+
+    def bind_provenance_ledger(self, ledger, run_id: str | None = None) -> None:
+        """Attach the v4 immutable provenance projection to this bus."""
+        self._provenance_ledger = ledger
+        self._provenance_run_id = run_id
+        if run_id:
+            ledger.ensure_run(run_id)
+
+    def bind_action_gateway(self, gateway) -> None:
+        self._action_gateway = gateway
+
+    @property
+    def action_gateway(self):
+        return self._action_gateway
 
     def bind_topology(self, edges, monitors: list[str] | None = None) -> None:
         """Bind strategy routing constraints and passive monitor identities."""
@@ -143,6 +172,12 @@ class MessageBus:
         if inspected_event is None:
             return None
 
+        # Optional v4 action boundary. Existing event producers remain
+        # backwards-compatible, while tool/effect metadata opts into the
+        # structured ActionRequest path before persistence or delivery.
+        if self._action_gateway is not None:
+            inspected_event = await self._authorize_event_action(inspected_event)
+
         if (
             self._allowed_edges is not None
             and (inspected_event.source_node, inspected_event.target_node)
@@ -179,14 +214,13 @@ class MessageBus:
                     }
                 )
 
-        self.history.append(inspected_event)
-        collect_event(inspected_event)
-
+        # F-C2: persist BEFORE recording in history or delivering. A store
+        # failure must fail the publish loudly instead of leaving the in-memory
+        # view and the ledger disagreeing while the run still looks healthy.
         if self._event_store is not None:
-            try:
-                await self._event_store.store_event(inspected_event)
-            except Exception:
-                pass
+            await self._event_store.store_event(inspected_event)
+
+        await self._record_provenance(inspected_event)
 
         # Per-run linking: if event carries a run_id, link it and
         # broadcast to the run-specific WebSocket room.
@@ -196,31 +230,43 @@ class MessageBus:
             else None
         )
         if run_id and self._event_store is not None:
-            try:
-                await self._event_store.store_run_event(
-                    {
-                        "run_id": run_id,
-                        "event_id": inspected_event.event_id,
-                        "trace_id": inspected_event.trace_id,
-                        "event_json": inspected_event.model_dump_json(
-                            exclude_none=True
-                        ),
-                        "created_at": time(),
-                    }
-                )
-            except Exception:
-                pass
+            await self._event_store.store_run_event(
+                {
+                    "run_id": run_id,
+                    "event_id": inspected_event.event_id,
+                    "trace_id": inspected_event.trace_id,
+                    "event_json": inspected_event.model_dump_json(
+                        exclude_none=True
+                    ),
+                    "created_at": time(),
+                }
+            )
 
-        await self._broadcast(inspected_event)
+        self.history.append(inspected_event)
+        collect_event(inspected_event)
+
+        # Broadcast hooks are transport-facing (the default hook is the global
+        # WebSocket room), so they must receive the same label-aware projection
+        # as per-run rooms. Internal handlers/listeners above still receive the
+        # committed event for enforcement and auditing.
+        public_event = self._project_event(inspected_event)
+        await self._broadcast(public_event)
 
         if run_id:
             from app.websocket_manager import websocket_manager
 
             await websocket_manager.broadcast(
-                inspected_event, room_id=str(run_id)
+                public_event, room_id=str(run_id)
             )
 
-        if inspected_event.action_taken in (ActionTaken.BLOCK, ActionTaken.ISOLATE):
+        # F-C1: QUARANTINE is a containment action just like BLOCK and ISOLATE.
+        # DefenseCoordinator emits it directly for the `quarantine` decision, so
+        # it reaches this point without the containment branch above having
+        # rewritten it to BLOCK. Status is checked too, because several paths set
+        # status and action_taken independently.
+        if inspected_event.action_taken in _CONTAINED_ACTIONS:
+            return inspected_event
+        if inspected_event.status in _CONTAINED_STATUSES:
             return inspected_event
 
         target_handler = self._handlers.get(inspected_event.target_node)
@@ -234,6 +280,79 @@ class MessageBus:
                 pass
 
         return inspected_event
+
+    def _project_event(self, event: AgentEvent) -> AgentEvent:
+        """Public transport projection; payload bodies never bypass state labels."""
+        ledger = self._provenance_ledger
+        if ledger is None:
+            return event
+        refs = tuple(event.artifact_refs or (event.metadata or {}).get("artifact_refs", ()) or ())
+        unavailable = False
+        retained = False
+        for ref in refs:
+            artifact = ledger.get_artifact(ref)
+            state = ledger.current_state(ref)
+            # A missing reference is not evidence that the payload is safe.
+            # For public transport it is treated as unavailable and redacted;
+            # the policy path separately fail-closes E1-E3 on unknown refs.
+            if artifact is None:
+                unavailable = True
+                continue
+            if state in {ArtifactState.QUARANTINED, ArtifactState.INVALIDATED}:
+                unavailable = True
+            if state is ArtifactState.RETAINED:
+                retained = True
+        if not unavailable and not retained:
+            return event
+        metadata = {
+            **event.metadata,
+            "projection_filtered": True,
+            "retained_label": retained,
+            "confidentiality": "restricted" if retained else "unavailable",
+        }
+        return event.model_copy(update={
+            "payload_snippet": "[REDACTED: unavailable provenance]" if unavailable else "[REDACTED: retained label required]",
+            "metadata": metadata,
+        })
+
+    async def _authorize_event_action(self, event: AgentEvent) -> AgentEvent:
+        from app.actions.models import ActionArgument, ActionRequest, EffectClass, SecurityDecision
+        metadata = event.metadata or {}
+        raw_effect = str(metadata.get("effect_class", "E0"))
+        try:
+            effect = EffectClass(raw_effect)
+        except ValueError:
+            effect = EffectClass.E1
+        refs = tuple(event.artifact_refs or metadata.get("artifact_refs", ()) or ())
+        request = ActionRequest(
+            action_id=event.event_id,
+            run_id=str(metadata.get("run_id") or self._provenance_run_id or "default"),
+            actor_agent_id=event.source_node,
+            tool_id=event.target_node,
+            operation=event.event_type.value,
+            arguments=(ActionArgument("payload", event.payload_snippet, refs, "content", event.trust_level),),
+            capability_requested=frozenset(metadata.get("capabilities", ()) or ()),
+            resource_scope=str(metadata.get("resource_scope", "default")),
+            effect_class=effect,
+            reversible=bool(metadata.get("reversible", effect in {EffectClass.E0, EffectClass.E1, EffectClass.E2})),
+            deadline=metadata.get("deadline"),
+        )
+        self._action_gateway.register(event.target_node, event.event_type.value, lambda _request: _noop_action())
+        result = await self._action_gateway.submit(request)
+        if result.decision is SecurityDecision.ALLOW:
+            return event
+        action = ActionTaken.QUARANTINE if result.decision in {SecurityDecision.QUARANTINE, SecurityDecision.UNKNOWN} else ActionTaken.BLOCK
+        return event.model_copy(update={
+            "status": EventStatus.QUARANTINED,
+            "action_taken": action,
+            "severity": EventSeverity.CRITICAL,
+            "metadata": {
+                **metadata,
+                "gateway_denied": True,
+                "gateway_reason": result.reason_code,
+                "public_reason": result.public_reason or "denied: policy",
+            },
+        })
 
     async def emit(self, event: AgentEvent) -> AgentEvent:
         trace_id = get_current_trace_id()
@@ -255,40 +374,127 @@ class MessageBus:
         collect_event(event)
 
         if self._event_store is not None:
-            try:
-                await self._event_store.store_event(event)
-            except Exception:
-                pass
+            await self._event_store.store_event(event)
+
+        await self._record_provenance(event)
 
         run_id = (
             event.metadata.get("run_id") if event.metadata else None
         )
         if run_id and self._event_store is not None:
-            try:
-                await self._event_store.store_run_event(
-                    {
-                        "run_id": run_id,
-                        "event_id": event.event_id,
-                        "trace_id": event.trace_id,
-                        "event_json": event.model_dump_json(
-                            exclude_none=True
-                        ),
-                        "created_at": time(),
-                    }
-                )
-            except Exception:
-                pass
+            await self._event_store.store_run_event(
+                {
+                    "run_id": run_id,
+                    "event_id": event.event_id,
+                    "trace_id": event.trace_id,
+                    "event_json": event.model_dump_json(
+                        exclude_none=True
+                    ),
+                    "created_at": time(),
+                }
+            )
 
-        await self._broadcast(event)
+        public_event = self._project_event(event)
+        await self._broadcast(public_event)
 
         if run_id:
             from app.websocket_manager import websocket_manager
 
             await websocket_manager.broadcast(
-                event, room_id=str(run_id)
+                public_event, room_id=str(run_id)
             )
 
         return event
+
+    async def _record_provenance(self, event: AgentEvent) -> None:
+        ledger = self._provenance_ledger
+        if ledger is None:
+            return
+        from app.provenance.models import ActivityRecord, ArtifactKind, ArtifactState, ArtifactVersion, Derivation, ProvenanceLevel, StateTransition
+        import hashlib
+        import json
+
+        run_id = str(event.metadata.get("run_id") if event.metadata else None or self._provenance_run_id or "default")
+        ledger.ensure_run(run_id)
+        kind_map = {
+            "input": ArtifactKind.MESSAGE,
+            "communication": ArtifactKind.MESSAGE,
+            "tool_call": ArtifactKind.TOOL_RESULT,
+        }
+        kind = kind_map.get(event.event_type.value, ArtifactKind.MESSAGE)
+        integrity = "high" if event.trust_level == "trusted" else "low" if event.trust_level == "untrusted" else "unknown"
+        metadata = event.metadata or {}
+        visible_inputs = tuple(dict.fromkeys(str(item) for item in (
+            list(event.artifact_refs or metadata.get("artifact_refs", ()) or ())
+            + ([metadata["system_prompt_id"]] if metadata.get("system_prompt_id") else [])
+            + list(metadata.get("few_shot_ids", ()) or ())
+            + list(metadata.get("tool_description_ids", ()) or ())
+        )))
+        parent_versions = list(visible_inputs)
+        if event.parent_event_id:
+            parent_versions.append(f"event_{event.parent_event_id}")
+        origins = {event.source_node}
+        for parent_id in parent_versions:
+            normalized_parent = parent_id if str(parent_id).startswith("event_") else f"event_{parent_id}"
+            parent = ledger.get_artifact(normalized_parent) or ledger.get_artifact(str(parent_id))
+            if parent is not None:
+                origins.update(parent.origin_principals)
+
+        artifact = ArtifactVersion(
+            version_id=f"event_{event.event_id}", artifact_id=event.event_id, run_id=run_id,
+            kind=kind, value_hash=hashlib.sha256(event.payload_snippet.encode()).hexdigest(),
+            origin_principals=frozenset(origins), integrity=integrity,
+            metadata={
+                "event_id": event.event_id,
+                "event_type": event.event_type.value,
+                "visible_input_ids": list(dict.fromkeys(str(item) for item in (
+                    list(event.artifact_refs or (event.metadata or {}).get("artifact_refs", ()) or ())
+                    + ([(event.metadata or {})["system_prompt_id"]] if (event.metadata or {}).get("system_prompt_id") else [])
+                    + list((event.metadata or {}).get("few_shot_ids", ()) or ())
+                    + list((event.metadata or {}).get("tool_description_ids", ()) or ())
+                ))),
+                "system_prompt": (event.metadata or {}).get("system_prompt"),
+                "few_shot_ids": list((event.metadata or {}).get("few_shot_ids", ())),
+                "tool_description_ids": list((event.metadata or {}).get("tool_description_ids", ())),
+            },
+        )
+        ledger.append_artifact(artifact)
+        ledger.append_activity(ActivityRecord(
+            activity_id=f"activity_{event.event_id}", run_id=run_id,
+            actor_agent_id=event.source_node, kind=event.event_type.value,
+            visible_input_ids=visible_inputs,
+            tool_id=event.target_node if event.event_type.value == "tool_call" else None,
+            operation=event.event_type.value,
+            effect_class=str((event.metadata or {}).get("effect_class", "E0")),
+        ))
+        if event.parent_event_id:
+            parent_id = f"event_{event.parent_event_id}"
+            if ledger.get_artifact(parent_id) is not None:
+                ledger.append_derivation(Derivation(
+                    relation_id=f"event_rel_{event.event_id}", run_id=run_id,
+                    child_version_id=artifact.version_id, parent_version_ids=(parent_id,),
+                    activity_id=event.event_type.value, relation_type="derived_from",
+                ))
+        for index, parent_id in enumerate(visible_inputs):
+            p1_id = parent_id if str(parent_id).startswith("event_") else f"event_{parent_id}"
+            if p1_id == artifact.version_id or ledger.get_artifact(p1_id) is None:
+                continue
+            ledger.append_derivation(Derivation(
+                relation_id=f"event_p1_rel_{event.event_id}_{index}",
+                run_id=run_id, child_version_id=artifact.version_id,
+                parent_version_ids=(p1_id,), activity_id=f"activity_{event.event_id}",
+                relation_type="conservative_influence",
+                provenance_level=ProvenanceLevel.P1,
+                effect_class=str((event.metadata or {}).get("effect_class", "E0")),
+            ))
+        if event.action_taken in {ActionTaken.BLOCK, ActionTaken.QUARANTINE, ActionTaken.ISOLATE}:
+            target_state = ArtifactState.QUARANTINED if event.action_taken is ActionTaken.QUARANTINE else ArtifactState.INVALIDATED
+            current = ledger.current_state(artifact.version_id) or ArtifactState.ACTIVE
+            ledger.transition_state(StateTransition(
+                transition_id=f"event_state_{event.event_id}", run_id=run_id,
+                version_id=artifact.version_id, from_state=current, to_state=target_state,
+                seq=0, reason=f"event_action:{event.action_taken.value}", action_id=event.event_id,
+            ))
 
     async def _broadcast(self, event: AgentEvent) -> None:
         stale_hooks: list[BroadcastHook] = []

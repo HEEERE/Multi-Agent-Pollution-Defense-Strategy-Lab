@@ -219,10 +219,48 @@ async def get_run_events(
     if run is None:
         raise HTTPException(status_code=404, detail="run not found")
     rows = await store.get_run_events(run_id, limit=limit, offset=offset)
-    return [
-        json.loads(row["event_json"]) if row.get("event_json") else {}
-        for row in rows
-    ]
+    events = [json.loads(row["event_json"]) if row.get("event_json") else {} for row in rows]
+    # The event store intentionally keeps the committed/audit payload. The
+    # public API must apply the same provenance state labels as WebSocket
+    # transport before returning it to an operator-facing client.
+    from app.provenance import ProvenanceLedger
+    ledger = ProvenanceLedger(store.db_path.with_name("provenance.db"))
+    try:
+        has_provenance = bool(ledger.list_artifacts(run_id))
+        if not has_provenance:
+            return events
+        for event in events:
+            metadata = event.get("metadata") or {}
+            refs = event.get("artifact_refs") or metadata.get("artifact_refs") or []
+            refs = list(refs)
+            own = event.get("event_id")
+            if own:
+                refs.append(f"event_{own}")
+            unavailable = False
+            retained = False
+            for ref in refs:
+                if ledger.get_artifact(str(ref)) is None:
+                    unavailable = True
+                    continue
+                state = ledger.current_state(str(ref))
+                if state is not None and state.value in {"quarantined", "invalidated"}:
+                    unavailable = True
+                if state is not None and state.value == "retained":
+                    retained = True
+            if unavailable or retained:
+                event["payload_snippet"] = (
+                    "[REDACTED: unavailable provenance]"
+                    if unavailable else "[REDACTED: retained label required]"
+                )
+                event["metadata"] = {
+                    **metadata,
+                    "projection_filtered": True,
+                    "confidentiality": "unavailable" if unavailable else "restricted",
+                    "retained_label": retained,
+                }
+        return events
+    finally:
+        ledger.close()
 
 
 async def cancel_run(run_id: str) -> dict:

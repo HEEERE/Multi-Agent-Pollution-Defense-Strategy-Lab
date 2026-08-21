@@ -11,6 +11,7 @@ from app.api.routes import (
     honeypot,
     playbooks,
     policies,
+    provenance,
     replay,
     runs,
     settings,
@@ -58,6 +59,7 @@ def create_app() -> FastAPI:
         (benchmark.router, "/api/v1/benchmark", ["benchmark"]),
         (honeypot.router, "/api/v1/honeypot", ["honeypot"]),
         (defense.router, "/api/v1/defense", ["defense"]),
+        (provenance.router, "/api/v1/provenance", ["provenance"]),
     ]
     for router, prefix, tags in protected_routers:
         app.include_router(

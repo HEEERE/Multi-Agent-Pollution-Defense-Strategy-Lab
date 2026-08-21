@@ -95,19 +95,23 @@ async def test_num_runs_generates_multiple_traces_and_aggregate(monkeypatch):
         def __init__(self, bus, llm_client):
             pass
 
-        async def run_experiment(self, config):
+        async def run_experiment(self, config, label_sink=None):
             nonlocal counter
             counter += 1
+            event_id = f"event-{counter}"
+            # Labels go to the write-only oracle sink, never into metadata.
+            if label_sink is not None:
+                label_sink(event_id, False, "benign")
             return [
                 AgentEvent(
-                    event_id=f"event-{counter}",
+                    event_id=event_id,
                     trace_id=f"trace-{counter}",
                     event_type="input",
                     source_node="gateway",
                     target_node="agent",
                     payload_snippet="safe",
                     status=EventStatus.SAFE,
-                    metadata={"ground_truth_threat": False},
+                    metadata={},
                 )
             ]
 

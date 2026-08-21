@@ -238,4 +238,27 @@ export interface SettingsResponse {
   updated_at?: number | null;
 }
 
+export interface ProvenanceNode {
+  version_id: string;
+  artifact_id: string;
+  kind: string;
+  integrity: string;
+  confidentiality: string;
+  scope: string;
+  taint_class: "clean" | "contaminated_reachable" | "contaminated_unreachable" | string;
+  state: string;
+  label_enforced: boolean;
+}
+
+export interface ProvenanceResponse {
+  run_id: string;
+  mode: "conservative" | "tight";
+  snapshot: string;
+  nodes: ProvenanceNode[];
+  edges: Array<{ relation_id: string; child: string; parents: string[]; relation_type: string }>;
+  activities: JsonObject[];
+  support_groups: JsonObject[];
+  metrics: Record<string, number>;
+}
+
 export type WsStatus = "connecting" | "connected" | "disconnected";

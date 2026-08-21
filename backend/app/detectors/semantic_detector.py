@@ -92,15 +92,19 @@ class SemanticDetector(BaseDetector):
         similarity: float,
         flagged: bool,
     ) -> None:
-        label = event.metadata.get("ground_truth_threat")
-        if not self.auto_calibrate or type(label) is not bool:
-            return
-        stats = self._category_stats[injection_type]
-        if not stats.window:
-            stats.threshold = self.threshold
-            stats.min_matches = self.min_matches
-        stats.record(similarity, label, flagged)
-        stats.calibrate()
+        """Online calibration is disabled by design.
+
+        This method used to read ``event.metadata["ground_truth_threat"]`` and
+        tune per-category thresholds from it. That is label leakage: the detector
+        was learning from the answer key during the run, so its reported
+        precision/recall measured nothing. Thresholds must come from an offline
+        calibration set instead (v4 plan section 6.3), which is why the label is
+        no longer present in event metadata at all.
+
+        Kept as a no-op so the call sites and the ``CategoryStats`` machinery stay
+        available for a future offline calibrator.
+        """
+        return
 
     async def detect(self, event: "AgentEvent", context: DetectionContext) -> DetectionResult:
         payload = event.payload_snippet

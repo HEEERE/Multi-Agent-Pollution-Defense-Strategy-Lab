@@ -5,7 +5,7 @@ from app.agents.base import BaseAgent
 from app.agents.auditor import AuditorAgent
 from app.gateway.base import BaseGateway
 from app.llm.base import ChatMessage, LLMClient
-from app.message_bus import MessageBus, clear_trace_context, set_trace_context
+from app.message_bus import MessageBus, clear_trace_context, set_trace_context, set_run_context, clear_run_context
 from app.schemas import (
     ActionTaken,
     AgentEvent,
@@ -24,19 +24,28 @@ class SimulationRunner:
         config: TopologyConfig,
         bus: MessageBus,
         llm_client: LLMClient | None = None,
+        label_sink=None,
     ) -> None:
         self.config = config
         self.bus = bus
         self.llm_client = llm_client
+        # Write-only callback supplied by the harness. The runner records which
+        # events it injected without knowing where labels are kept, so the
+        # runtime holds no handle it could read ground truth back through.
+        self.label_sink = label_sink
         self.trace_id = uuid.uuid4().hex[:16]
         self._events: list[AgentEvent] = []
         self._agent_events: dict[str, asyncio.Event] = {}
+        self.run_id = str((config.metadata or {}).get("run_id") or self.trace_id)
 
     async def run(self) -> list[AgentEvent]:
         set_trace_context(self.trace_id)
+        # Give each simulation an isolated provenance run even when the global
+        # process-wide bus is reused by successive experiments.
+        set_run_context(self.run_id)
 
         try:
-            builder = TopologyBuilder(self.config, self.bus, self.llm_client)
+            builder = TopologyBuilder(self.config, self.bus, self.llm_client, run_id=self.run_id)
             nodes = builder.build()
 
             injection_map: dict[int, list[InjectionConfig]] = {}
@@ -57,12 +66,17 @@ class SimulationRunner:
             return events
         finally:
             clear_trace_context()
+            clear_run_context()
 
     async def _inject(
         self,
         nodes: dict,
         injection: InjectionConfig,
     ) -> None:
+        # No ground-truth label in metadata. The label goes to the write-only
+        # sink the harness supplied, so no online component can read it: a
+        # detector that sees the label can tune itself on it, which invalidates
+        # every metric it produces.
         event = AgentEvent(
             trace_id=self.trace_id,
             event_type=EventType.INPUT,
@@ -75,10 +89,15 @@ class SimulationRunner:
             metadata={
                 **injection.metadata,
                 "injection_type": injection.injection_type.value,
-                "ground_truth_threat": True,
             },
         )
-        await self.bus.publish(event)
+        published = await self.bus.publish(event)
+        if self.label_sink is not None:
+            self.label_sink(
+                (published or event).event_id,
+                True,
+                injection.injection_type.value,
+            )
 
     async def _run_turn(self, nodes: dict, turn: int) -> None:
         gateway = next(

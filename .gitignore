@@ -31,6 +31,18 @@ __pycache__/
 *.sqlite3-journal
 backend/data/
 backend/app/data/
+backend/tmp/
+
+# Research/runtime data and exports (architecture code only)
+/data/
+/results/
+/reports/
+*.jsonl
+*.parquet
+*.pkl
+*.pickle
+*.npy
+*.npz
 
 # IDE
 .vscode/
@@ -71,3 +83,7 @@ test-results/
 # OS
 .DS_Store
 Thumbs.db
+
+# Research scratch output
+/tmp/
+backend/.pytest_tmp/

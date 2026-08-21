@@ -14,23 +14,13 @@ from app.defense.guards.tool_guard import ToolGuardAgent
 from app.defense.threat_memory import ThreatMemory
 from app.policy.engine import PolicyEngine
 
-_threat_memory: ThreatMemory | None = None
-_containment_registry: ContainmentRegistry | None = None
 _defense_coordinator: DefenseCoordinator | None = None
 
-
-def get_threat_memory() -> ThreatMemory:
-    global _threat_memory
-    if _threat_memory is None:
-        _threat_memory = ThreatMemory()
-    return _threat_memory
-
-
-def get_containment_registry() -> ContainmentRegistry:
-    global _containment_registry
-    if _containment_registry is None:
-        _containment_registry = ContainmentRegistry()
-    return _containment_registry
+# F-C3: there are deliberately no module-level ThreatMemory / ContainmentRegistry
+# singletons. Each coordinator owns exactly one of each, and the bus is bound to
+# that same instance, so containment state cannot diverge between the component
+# that applies a plan and the component that enforces it, and cannot leak across
+# runs. Callers that need the registry must go through the coordinator.
 
 
 def create_defense_coordinator(bus=None, event_store=None) -> DefenseCoordinator:
@@ -52,7 +42,7 @@ def create_defense_coordinator(bus=None, event_store=None) -> DefenseCoordinator
             weight=DEFENDER_WEIGHTS.get("honeypot_guard", 0.8),
         ),
     ]
-    return DefenseCoordinator(
+    coordinator = DefenseCoordinator(
         defenders=defenders,
         bus=bus,
         event_store=event_store,
@@ -61,6 +51,11 @@ def create_defense_coordinator(bus=None, event_store=None) -> DefenseCoordinator
         containment_registry=containment_registry,
         recovery_agent=RecoveryAgent(threat_memory=threat_memory),
     )
+    # Bind the very same registry the coordinator applies plans to, so the
+    # enforcement point and the decision point can never disagree (F-C3).
+    if bus is not None:
+        bus.bind_containment_registry(containment_registry)
+    return coordinator
 
 
 def get_defense_coordinator(bus=None, event_store=None) -> DefenseCoordinator:

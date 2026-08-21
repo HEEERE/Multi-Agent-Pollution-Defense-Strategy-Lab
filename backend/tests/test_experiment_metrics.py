@@ -1,7 +1,13 @@
 import pytest
 
 from app.experiments.metrics import MetricsComputer
+from app.experiments.oracle import GroundTruthOracle
 from app.schemas import ActionTaken, AgentEvent, EventStatus, EventType
+
+# Labels collected per test event, then handed to a sealed Oracle. They are no
+# longer carried in event metadata: a label visible on the event is also visible
+# to online detectors, and SemanticDetector was calibrating on it.
+_LABELS: dict[str, bool] = {}
 
 
 def make_event(
@@ -18,7 +24,7 @@ def make_event(
 ) -> AgentEvent:
     metadata = {}
     if ground_truth is not None:
-        metadata["ground_truth_threat"] = ground_truth
+        _LABELS[event_id] = ground_truth
     if latency_ms is not None:
         metadata["detection"] = {"latency_ms": latency_ms}
     return AgentEvent(
@@ -33,6 +39,23 @@ def make_event(
         action_taken=action,
         metadata=metadata,
     )
+
+
+def _oracle() -> GroundTruthOracle:
+    """A sealed Oracle carrying the labels recorded by ``make_event``."""
+    o = GroundTruthOracle(experiment_id="test")
+    sink = o.sink()
+    for eid, label in _LABELS.items():
+        sink(eid, label, "test")
+    o.seal()
+    return o
+
+
+@pytest.fixture(autouse=True)
+def _reset_labels():
+    _LABELS.clear()
+    yield
+    _LABELS.clear()
 
 
 def test_metrics_use_labels_and_bounded_spread_rate():
@@ -60,7 +83,7 @@ def test_metrics_use_labels_and_bounded_spread_rate():
         ),
     ]
 
-    metrics = MetricsComputer(events).compute()
+    metrics = MetricsComputer(events, oracle=_oracle()).compute()
 
     assert metrics.false_positive_rate == 0.5
     assert metrics.propagation_depth == 1

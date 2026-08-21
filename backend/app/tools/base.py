@@ -1,11 +1,19 @@
+from uuid import uuid4
+
+from app.actions import ActionArgument, ActionGateway, ActionRequest, EffectClass, SecurityDecision
 from app.message_bus import MessageBus
 from app.schemas import ActionTaken, AgentEvent, EventStatus, EventType, new_trace_id
 
 
 class BaseTool:
-    def __init__(self, node_id: str, bus: MessageBus) -> None:
+    def __init__(self, node_id: str, bus: MessageBus, gateway: ActionGateway | None = None) -> None:
         self.node_id = node_id
         self.bus = bus
+        self.gateway = gateway or bus.action_gateway
+        if self.gateway is not None:
+            async def _authorize_return(_request):
+                return None
+            self.gateway.register(self.node_id, "return_result", _authorize_return)
         self.bus.subscribe(self.node_id, self.handle_event)
 
     async def handle_event(self, event: AgentEvent) -> None:
@@ -18,6 +26,7 @@ class BaseTool:
             status=event.status,
             trace_id=event.trace_id,
             parent_event_id=event.event_id,
+            run_id=str((event.metadata or {}).get("run_id") or "runtime"),
         )
 
     async def return_result(
@@ -27,7 +36,21 @@ class BaseTool:
         status: EventStatus = EventStatus.SAFE,
         trace_id: str | None = None,
         parent_event_id: str | None = None,
+        run_id: str = "runtime",
     ) -> AgentEvent | None:
+        if self.gateway is not None:
+            request = ActionRequest(
+                action_id=f"act_{uuid4().hex[:16]}",
+                run_id=run_id,
+                actor_agent_id=self.node_id,
+                tool_id=self.node_id,
+                operation="return_result",
+                arguments=(ActionArgument("payload", payload, semantic_role="content", integrity="high"),),
+                effect_class=EffectClass.E0,
+            )
+            result = await self.gateway.submit(request)
+            if result.decision is not SecurityDecision.ALLOW:
+                return None
         return await self.bus.publish(
             AgentEvent(
                 trace_id=trace_id or new_trace_id(),

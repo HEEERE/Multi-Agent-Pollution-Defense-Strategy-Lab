@@ -2,9 +2,19 @@ from __future__ import annotations
 
 from fastapi import APIRouter
 
-from app.defense.manager import get_defense_coordinator, get_containment_registry
+from app.defense.containment import ContainmentRegistry
+from app.defense.manager import get_defense_coordinator
 
 router = APIRouter(tags=["defense"])
+
+
+def _registry() -> ContainmentRegistry:
+    """The coordinator owns the only ContainmentRegistry (F-C3).
+
+    Reading it through the coordinator guarantees the API observes and mutates
+    the same state the message bus enforces.
+    """
+    return get_defense_coordinator().containment_registry
 
 
 @router.get("/memory")
@@ -20,11 +30,11 @@ async def get_latest_decisions(limit: int = 50) -> dict:
     return {"items": decisions[-limit:]}
 
 
-# ── Containment management ────────────────────────────────────────
+# 鈹€鈹€ Containment management 鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€
 
 @router.get("/containment/status")
 async def get_containment_status() -> dict:
-    registry = get_containment_registry()
+    registry = _registry()
     return {
         "quarantined_nodes": sorted(registry.quarantined_nodes),
         "isolated_tools": sorted(registry.isolated_tools),
@@ -35,7 +45,7 @@ async def get_containment_status() -> dict:
 
 @router.post("/containment/release/node/{node_id}")
 async def release_node(node_id: str) -> dict:
-    registry = get_containment_registry()
+    registry = _registry()
     registry.release_node(node_id)
     coordinator = get_defense_coordinator()
     coordinator.threat_memory.node_risk[node_id] = 0.2
@@ -44,26 +54,26 @@ async def release_node(node_id: str) -> dict:
 
 @router.post("/containment/release/tool/{tool_id}")
 async def release_tool(tool_id: str) -> dict:
-    registry = get_containment_registry()
+    registry = _registry()
     registry.release_tool(tool_id)
     return {"tool_id": tool_id, "status": "release_requested"}
 
 
 @router.post("/containment/release/edge")
 async def release_edge(source: str, target: str) -> dict:
-    registry = get_containment_registry()
+    registry = _registry()
     registry.release_edge(source, target)
     return {"source": source, "target": target, "status": "release_requested"}
 
 
 @router.post("/containment/release/memory/{memory_key}")
 async def release_memory_key(memory_key: str) -> dict:
-    registry = get_containment_registry()
+    registry = _registry()
     registry.release_memory_key(memory_key)
     return {"memory_key": memory_key, "status": "release_requested"}
 
 
-# ── Recovery ───────────────────────────────────────────────────────
+# 鈹€鈹€ Recovery 鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€
 
 @router.post("/recovery/check/{node_id}")
 async def check_recovery(node_id: str) -> dict:
@@ -92,7 +102,7 @@ async def approve_recovery(node_id: str) -> dict:
     if coordinator.bus is not None:
         await coordinator.bus.emit(recovery_event)
 
-    registry = get_containment_registry()
+    registry = _registry()
     registry.release_node(node_id)
     coordinator.threat_memory.node_risk[node_id] = 0.1
 

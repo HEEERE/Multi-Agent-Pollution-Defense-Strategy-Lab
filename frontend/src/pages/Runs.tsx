@@ -45,6 +45,12 @@ export function Runs() {
       Boolean(runId) &&
       ["completed", "failed", "cancelled"].includes(run.data?.status ?? ""),
   });
+  const provenance = useQuery({
+    queryKey: ["provenance", runId],
+    queryFn: () => api.getProvenance(runId!),
+    enabled: Boolean(runId),
+    retry: false,
+  });
   const cancel = useMutation({
     mutationFn: () => api.cancelRun(runId!),
     onSuccess: () => {
@@ -163,6 +169,31 @@ export function Runs() {
               <JsonViewer value={metrics.data ?? run.data.metrics} className="p-3" />
             </section>
           </div>
+          <section className="panel overflow-hidden">
+            <div className="panel-header">
+              <div>
+                <h3 className="section-title">Provenance 双图</h3>
+                <p className="muted mt-1">保守图用于否决，紧图仅用于提议；不可用版本不会进入展示投影。</p>
+              </div>
+              <span className="font-mono text-[10px] text-slate-500">{provenance.data?.snapshot?.slice(0, 12) ?? "--"}</span>
+            </div>
+            {provenance.error ? (
+              <div className="p-4 text-xs text-slate-500">该运行暂无 provenance 账本。</div>
+            ) : (
+              <div className="grid gap-px bg-slate-800 sm:grid-cols-3">
+                {[
+                  ["版本数", provenance.data?.nodes.length ?? 0],
+                  ["派生边", provenance.data?.edges.length ?? 0],
+                  ["保留污染版本", provenance.data?.nodes.filter((node) => node.taint_class === "contaminated_unreachable").length ?? 0],
+                ].map(([label, value]) => (
+                  <div key={String(label)} className="bg-ink-850 p-4">
+                    <div className="text-[11px] text-slate-500">{label}</div>
+                    <div className="mt-2 font-mono text-lg text-cyan-200">{String(value)}</div>
+                  </div>
+                ))}
+              </div>
+            )}
+          </section>
         </>
       )}
     </div>

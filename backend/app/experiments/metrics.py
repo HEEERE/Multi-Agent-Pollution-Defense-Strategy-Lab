@@ -17,9 +17,23 @@ from app.schemas import (
 
 
 class MetricsComputer:
-    def __init__(self, events: list[AgentEvent], ground_truth: dict[str, bool] | None = None) -> None:
+    """Post-run metric computation.
+
+    Runs strictly after a run has terminated, which is the only point at which
+    ground-truth labels may be consulted. Labels arrive either as the legacy
+    payload-keyed ``ground_truth`` map or, preferably, as an ``oracle`` keyed by
+    event id (:class:`app.experiments.oracle.GroundTruthOracle`).
+    """
+
+    def __init__(
+        self,
+        events: list[AgentEvent],
+        ground_truth: dict[str, bool] | None = None,
+        oracle=None,
+    ) -> None:
         self.events = sorted(events, key=lambda e: e.timestamp)
         self.ground_truth = ground_truth or {}
+        self.oracle = oracle
 
     def compute(self) -> ExperimentMetrics:
         return ExperimentMetrics(
@@ -64,11 +78,21 @@ class MetricsComputer:
         return max_depth
 
     def _ground_truth_label(self, event: AgentEvent) -> bool | None:
+        """Resolve the hidden label for one event.
+
+        Order: the offline Oracle (keyed by event id) first, then the legacy
+        payload-keyed map. Event metadata is deliberately *not* consulted -- a
+        label carried in metadata is visible to online detectors, and one of them
+        was in fact calibrating itself on it.
+        """
+        if self.oracle is not None:
+            label = self.oracle.label_for(event.event_id)
+            if label is not None:
+                return label
         key = event.payload_snippet[:50]
         if key in self.ground_truth:
             return self.ground_truth[key]
-        label = event.metadata.get("ground_truth_threat")
-        return label if type(label) is bool else None
+        return None
 
     def _time_to_detection(self) -> float:
         first_inject = None

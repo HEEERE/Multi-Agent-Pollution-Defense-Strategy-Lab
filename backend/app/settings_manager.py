@@ -21,7 +21,9 @@ FACTORY_DEFAULTS: dict[str, dict[str, object]] = {
         "semantic.threshold": 0.65,
         "semantic.top_k": 5,
         "semantic.min_matches": 1,
-        "semantic.auto_calibrate": True,
+        # Off by default: online calibration required a ground-truth label in
+        # event metadata, which is label leakage. Offline calibration only.
+        "semantic.auto_calibrate": False,
         "semantic.action_policy": "quarantine",
         "semantic.window_size": 50,
         "llm_intent.enabled": True,

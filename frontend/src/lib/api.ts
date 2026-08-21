@@ -19,6 +19,7 @@ import type {
   TraceGraphData,
   TraceSummary,
   ContaminationMetrics,
+  ProvenanceResponse,
 } from "./types";
 
 const client = axios.create({
@@ -119,6 +120,8 @@ export const api = {
     request<AgentEvent[]>({ url: `/api/v1/runs/${runId}/events` }),
   getRunMetrics: (runId: string) =>
     request<JsonObject>({ url: `/api/v1/runs/${runId}/metrics` }),
+  getProvenance: (runId: string, mode: "conservative" | "tight" = "conservative") =>
+    request<ProvenanceResponse>({ url: `/api/v1/provenance/${runId}`, params: { mode } }),
   cancelRun: (runId: string) =>
     request<JsonObject>({
       url: `/api/v1/runs/${runId}/cancel`,

@@ -77,6 +77,17 @@ class DetectorPipeline:
                 "latency_ms": round(latency_ms, 3),
             })
 
+            if result.metadata.get("unknown"):
+                final_event = final_event.model_copy(update={
+                    "status": EventStatus.QUARANTINED,
+                    "action_taken": ActionTaken.QUARANTINE,
+                    "severity": EventSeverity.CRITICAL,
+                    "metadata": {**final_event.metadata, "detector_unknown": True, "detection_log": detection_log},
+                })
+                blocked = True
+                await self._emit_intervention(final_event, "detector output unknown")
+                continue
+
             if not result.is_threat:
                 # Check gray-zone: confidence in [0.50, 0.75) → honeypot
                 if HoneyPotRouter.should_decoy(result):
@@ -131,41 +142,9 @@ class DetectorPipeline:
                 "metadata": {**final_event.metadata, "detection_log": detection_log},
             })
 
-        # ── Bayesian Confidence Fusion ──────────────────────────
-        # If no single detector blocked, fuse L2+L3 confidences to catch
-        # compound threats that individually don't meet thresholds.
-        if not blocked and detection_log:
-            active_results = [
-                d for d in detection_log
-                if not d.get("skipped") and d.get("confidence", 0) > 0
-            ]
-            confidences = [d["confidence"] for d in active_results]
-            if len(confidences) >= 2:
-                fused = self._fuse_confidences(confidences)
-                if fused >= self.fusion_threshold:
-                    final_event = final_event.model_copy(update={
-                        "status": EventStatus.QUARANTINED,
-                        "action_taken": ActionTaken.ALERT,
-                        "severity": EventSeverity.WARNING,
-                        "monitor_level": MonitorLevel.FEATURE,
-                        "metadata": {
-                            **final_event.metadata,
-                            "detection": {
-                                "detector_id": "bayesian_fusion",
-                                "level": MonitorLevel.FEATURE.value,
-                                "confidence": round(fused, 4),
-                                "reason": f"Fused confidence {fused:.3f} ≥ {self.fusion_threshold} from {len(confidences)} detectors",
-                            },
-                            "fusion": {
-                                "individual_confidences": confidences,
-                                "fused_confidence": round(fused, 4),
-                                "threshold": self.fusion_threshold,
-                            },
-                            "detection_log": detection_log,
-                        },
-                    })
-                    await self._emit_intervention(final_event,
-                        f"Bayesian fusion alert: compound confidence {fused:.3f}")
+        # Detector confidence is diagnostic only. Authorization is delegated to
+        # the deterministic policy/gateway path; no statistical fusion may
+        # synthesize an allow or a containment decision here.
 
         if self._policy_engine is not None:
             final_event.metadata.setdefault("target_node_type", self._infer_policy_node_type(event.target_node))

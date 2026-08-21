@@ -19,6 +19,10 @@ DEFAULT_SYSTEM_PROMPT = (
 
 
 class BaseAgent:
+    #: Fallback target when no topology successor is declared. Kept only for the
+    #: legacy demo topology, which does define this node.
+    DEFAULT_TARGET = "Auditor_Prime"
+
     def __init__(
         self,
         node_id: str,
@@ -26,6 +30,7 @@ class BaseAgent:
         llm_client: LLMClient | None = None,
         system_prompt: str | None = None,
         tools: list[str] | None = None,
+        downstream: list[str] | None = None,
     ) -> None:
         self.node_id = node_id
         self.bus = bus
@@ -33,10 +38,18 @@ class BaseAgent:
         self.system_prompt = system_prompt or DEFAULT_SYSTEM_PROMPT
         self.tools = tools or []
         self.infected = False
+        # Topology successors. When set, output is routed along declared edges
+        # instead of always to the auditor; a hardcoded target means a configured
+        # chain (RAG -> A -> memory -> B -> tool) silently never propagates past
+        # its first hop.
+        self.downstream = list(downstream or [])
         self._conversation_history: list[ChatMessage] = [
             ChatMessage(role="system", content=self.system_prompt)
         ]
         self.bus.subscribe(self.node_id, self.handle_event)
+
+    def _output_targets(self) -> list[str]:
+        return self.downstream or [self.DEFAULT_TARGET]
 
     async def handle_event(self, event: AgentEvent) -> None:
         if event.source_node == self.node_id:
@@ -66,20 +79,23 @@ class BaseAgent:
             parent_id = event.event_id
             trace_id = get_current_trace_id() or event.trace_id
 
-            await self.bus.publish(
-                AgentEvent(
-                    trace_id=trace_id,
-                    parent_event_id=parent_id,
-                    event_type=EventType.COMMUNICATION,
-                    source_node=self.node_id,
-                    target_node="Auditor_Prime",
-                    payload_snippet=response[:500],
-                    status=event.status,
-                    action_taken=event.action_taken,
-                    severity=event.severity,
-                    monitor_level=MonitorLevel.NONE,
+            for target in self._output_targets():
+                if target == event.source_node:
+                    continue  # do not bounce straight back at the sender
+                await self.bus.publish(
+                    AgentEvent(
+                        trace_id=trace_id,
+                        parent_event_id=parent_id,
+                        event_type=EventType.COMMUNICATION,
+                        source_node=self.node_id,
+                        target_node=target,
+                        payload_snippet=response[:500],
+                        status=event.status,
+                        action_taken=event.action_taken,
+                        severity=event.severity,
+                        monitor_level=MonitorLevel.NONE,
+                    )
                 )
-            )
 
     async def reason(self, event: AgentEvent) -> str:
         if self.llm_client is None:
