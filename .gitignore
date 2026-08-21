@@ -87,3 +87,6 @@ Thumbs.db
 # Research scratch output
 /tmp/
 backend/.pytest_tmp/
+
+# Private research specification (kept locally, never published)
+/最终方案-v4-不对称重构版.md

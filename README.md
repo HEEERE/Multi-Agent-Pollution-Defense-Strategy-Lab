@@ -125,4 +125,4 @@ Explicitly excluded from this repository release:
 
 Runtime data is ignored by `.gitignore` (`*.db`, `backend/data/`, Chroma stores, logs, temporary output and local QA artifacts). Before opening a pull request, inspect `git diff --cached --name-only` and confirm that only source code, tests and documentation are staged. Do not commit `.env`, API keys, raw payloads, generated experiment results or database files.
 
-See [docs/Phase1-4核心运行实现报告.md](docs/Phase1-4核心运行实现报告.md) for the implementation mapping and [最终方案-v4-不对称重构版.md](最终方案-v4-不对称重构版.md) for the full research specification.
+See [docs/Phase1-4核心运行实现报告.md](docs/Phase1-4核心运行实现报告.md) for the implementation mapping.
