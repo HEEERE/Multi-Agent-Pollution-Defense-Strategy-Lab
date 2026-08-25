@@ -6,7 +6,12 @@ from uuid import uuid4
 
 from app.provenance.ledger import ProvenanceLedger
 from app.provenance.models import ArtifactState, LabelEnforcementRecord, TaintClass
-from app.provenance.projection import ProvenanceGraph, build_conservative, build_tight
+from app.provenance.conservative_builder import build_conservative
+from app.provenance.projection import ProvenanceGraph
+from app.provenance.tight_builder import build_tight
+from app.state import asymmetric_repair
+from app.state.asymmetric_repair import RepairPlan
+from app.state.reachability import TaintReport, classify as classify_graph
 from app.verification import Certificate, CertificateChecker, RuntimeCheckStatus, RuntimeWitnessChecker
 
 
@@ -36,23 +41,19 @@ class StateController:
         return build_conservative(self.ledger, self.run_id, visible_inputs=visible_inputs), build_tight(self.ledger, self.run_id)
 
     def classify(self, sink_versions: set[str]) -> dict[str, TaintClass]:
+        """Three-way taint classification over the conservative graph.
+
+        Arguments are included here because callers use this view to pick clean
+        replay inputs and need every version accounted for; the availability
+        rates in ``TaintReport`` exclude them.
+        """
         conservative, _ = self.graphs()
-        reachable: set[str] = set()
-        for sink in sink_versions:
-            reachable.add(sink)
-            reachable.update(conservative.ancestors(sink))
-        low_sources = {version_id for version_id, artifact in conservative.versions.items() if artifact.integrity == "low"}
-        contaminated: set[str] = set()
-        for version_id in conservative.versions:
-            if (conservative.ancestors(version_id) | {version_id}) & low_sources:
-                contaminated.add(version_id)
-        out: dict[str, TaintClass] = {}
-        for version_id, artifact in conservative.versions.items():
-            if version_id in contaminated:
-                out[version_id] = TaintClass.CONTAMINATED_REACHABLE if version_id in reachable else TaintClass.CONTAMINATED_UNREACHABLE
-            else:
-                out[version_id] = TaintClass.CLEAN
-        return out
+        return classify_graph(conservative, sink_versions, include_arguments=True).classes
+
+    def taint_report(self, sink_versions: set[str]) -> TaintReport:
+        """Classification plus the L1 availability rates (v4 §3.7)."""
+        conservative, _ = self.graphs()
+        return classify_graph(conservative, sink_versions)
 
     def runtime_check(
         self,
@@ -84,8 +85,13 @@ class StateController:
         from app.provenance.models import StateTransition
         return self.ledger.transition_state(StateTransition(f"st_{uuid4().hex[:16]}", self.run_id, version_id, from_state, state, 0, reason, action_id))
 
-    def certify_and_retain(self, *, sink_versions: set[str], blocked_versions: set[str], candidate_versions: set[str] | None = None, checker: CertificateChecker | None = None) -> RetentionResult:
-        """Apply the v4 propose/veto retention rule to one committed snapshot."""
+    def certify_and_retain(self, *, sink_versions: set[str], blocked_versions: set[str], candidate_versions: set[str] | None = None, checker: CertificateChecker | None = None, horizon_closure: str = "closed") -> RetentionResult:
+        """Apply the v4 propose/veto retention rule to one committed snapshot.
+
+        ``horizon_closure == "open"`` means new activity may still build a fresh
+        path from a retained version to a sink, so 定理 5 does not hold and no
+        retention certificate may be issued (v4 §5.3).
+        """
         conservative, tight = self.graphs()
         tight_reachable = set().union(*(tight.ancestors(s) | {s} for s in sink_versions)) if sink_versions else set()
         conservative_reachable = set().union(*(conservative.ancestors(s) | {s} for s in sink_versions)) if sink_versions else set()
@@ -94,8 +100,8 @@ class StateController:
         vetoed = frozenset(v for v in proposed if v in conservative_reachable)
         allowed = proposed - vetoed
         checker = checker or CertificateChecker(self.ledger)
-        certificate = checker.issue(conservative, run_id=self.run_id, sink_versions=sink_versions, blocked_versions=blocked_versions, scope="retention")
-        if not certificate.valid:
+        certificate = checker.issue(conservative, run_id=self.run_id, sink_versions=sink_versions, blocked_versions=blocked_versions, scope="retention", horizon_closure=horizon_closure)
+        if horizon_closure == "open" or not certificate.valid:
             return RetentionResult(certificate, proposed, vetoed, frozenset())
         with self.ledger.atomic():
             for version_id in allowed:
@@ -145,31 +151,50 @@ class StateController:
             self.apply_state(version_id, ArtifactState.INVALIDATED, "retained_reachability_changed")
         return invalidated
 
+    def plan_repair(self, *, sink_versions: set[str], revoked_versions: set[str] | None = None) -> RepairPlan:
+        """Compute the cost-minimising repair plan without writing anything."""
+        conservative, tight = self.graphs()
+        return asymmetric_repair.solve(
+            conservative, tight,
+            sink_versions=sink_versions,
+            revoked_versions=revoked_versions,
+            support_groups=self.ledger.list_support_groups(self.run_id),
+        )
+
     def repair(self, *, sink_versions: set[str], revoked_versions: set[str], required_goals: set[str] | None = None,
                replay=None) -> dict:
-        """Apply support-preserving invalidation and optionally replay clean slices.
+        """Solve for a minimum-cost intervention set, apply it, and replay.
+
+        Delegates the decision to ``asymmetric_repair.solve``: the plan comes from
+        a witness cover over the real cost model, not from invalidating everything
+        contaminated. Retention only survives when the plan's independent
+        post-state check returned COVERED.
 
         Replay callbacks receive a tuple of clean input version IDs and must create
         new versions through the gateway; no invalidated version is reactivated.
         """
-        classifications = self.classify(sink_versions)
-        invalidated: set[str] = set()
-        retained: set[str] = set()
-        for version_id, taint in classifications.items():
-            if version_id in revoked_versions or taint is TaintClass.CONTAMINATED_REACHABLE:
-                if self.ledger.current_state(version_id) not in {ArtifactState.INVALIDATED, ArtifactState.QUARANTINED}:
-                    self.apply_state(version_id, ArtifactState.INVALIDATED, "support_preserving_repair")
-                invalidated.add(version_id)
-            elif taint is TaintClass.CONTAMINATED_UNREACHABLE:
-                retained.add(version_id)
+        plan = self.plan_repair(sink_versions=sink_versions, revoked_versions=revoked_versions)
+        terminal = {ArtifactState.INVALIDATED, ArtifactState.QUARANTINED}
+        with self.ledger.atomic():
+            for version_id in sorted(plan.invalidate):
+                if self.ledger.current_state(version_id) not in terminal:
+                    self.apply_state(version_id, ArtifactState.INVALIDATED, "asymmetric_repair")
+            for version_id in sorted(plan.retain):
+                if self.ledger.current_state(version_id) is ArtifactState.ACTIVE:
+                    self.apply_state(version_id, ArtifactState.RETAINED, "asymmetric_retention")
         replayed: list[object] = []
         if replay is not None and required_goals:
-            clean_inputs = tuple(sorted(version_id for version_id, taint in classifications.items() if taint is TaintClass.CLEAN))
+            classifications = self.classify(sink_versions)
+            clean_inputs = tuple(sorted(
+                version_id for version_id, taint in classifications.items()
+                if taint is TaintClass.CLEAN
+            ))
             for goal in sorted(required_goals):
                 replayed.append(replay(goal, clean_inputs))
         return {
-            "invalidated": sorted(invalidated),
-            "retained": sorted(retained),
+            "invalidated": sorted(plan.invalidate),
+            "retained": sorted(plan.retain),
             "replayed": replayed,
             "required_goals": sorted(required_goals or set()),
+            "plan": plan,
         }

@@ -164,16 +164,25 @@ def greedy_cover(g: Hypergraph, witnesses: list[Witness]) -> SolveResult:
     selected: set[str] = set()
     total = 0.0
     while uncovered:
-        best_iid, best_ratio, best_gain = None, float("inf"), 0
+        best_iid, best_key = None, None
         for iid, idxs in by_intervention.items():
             if iid in selected:
                 continue
             gain = len(idxs & uncovered)
             if gain == 0:
                 continue
-            ratio = g.interventions[iid].cost / gain
-            if ratio < best_ratio:
-                best_iid, best_ratio, best_gain = iid, ratio, gain
+            cost = g.interventions[iid].cost
+            # Fully ordered tie-break: ratio, then absolute cost, then coverage,
+            # then iid. Previously ties fell to whichever candidate `by_intervention`
+            # happened to hold first, and that index is built by iterating the
+            # `set[str]` break sets -- so the cover depended on string hash order and
+            # changed between processes. Measured across PYTHONHASHSEED 0/1/2/7/42/1234
+            # on one instance: covers of cost 3.5, 2.0 and 2.0, and a grid J_med of
+            # either 5.00 or 5.25. The published Phase 2 numbers were one draw from
+            # that distribution. Matches state/greedy_solver.py exactly.
+            key = (cost / gain, cost, -gain, iid)
+            if best_key is None or key < best_key:
+                best_iid, best_key = iid, key
         if best_iid is None:
             return SolveResult(
                 "unsatisfiable",

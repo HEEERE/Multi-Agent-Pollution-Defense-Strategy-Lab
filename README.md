@@ -1,8 +1,8 @@
 # MAJD-Guard
 
-MAJD-Guard 是一个用于研究多智能体级联污染与防御的架构代码仓库。当前公开内容覆盖最终方案 v4 的 Phase 0–4：研究有效性约束、版本化 provenance、异构传播、完全中介的 action gateway、双图 RAISE 机制、独立 checker、状态修复和运行时可观测接口。
+MAJD-Guard 是一个用于研究多智能体级联污染与防御的代码框架。公开内容包括版本化 provenance、异构传播、完全中介的 action gateway、双图 RAISE 机制、独立 checker、状态修复、运行时可观测接口，以及机制与端到端实验的统一执行框架。
 
-本仓库发布的是可复现的架构代码、测试、接口模型和文档，不发布具体运行数据、数据库、实验结果、私有模型凭据或外部 benchmark 数据集。
+本仓库只发布可复现的源代码、自动化测试、接口模型和使用说明。不发布私有架构/需求文档、任务卡、预注册材料、具体运行数据、数据库、实验报告、私有模型凭据或外部 benchmark 数据集。
 
 ## Architecture
 
@@ -45,13 +45,14 @@ backend/app/
 ├── state/               # StateController, retention, repair, labels
 ├── verification/        # Residual/runtime/certificate checkers
 ├── research/scale/      # Synthetic Phase 0.5 and Phase 4 mechanism modules
+├── experiments/         # Unified runners, adapters, metrics, packages and archives
+├── sandbox/             # Trial-scoped side-effect sandbox
 ├── message_bus.py       # Commit, route, and public transport boundary
 ├── runtime.py           # RunManifest, RunContext, RunEngine
 └── simulation/          # Topology-aware simulation runner
 
 backend/tests/           # Unit, property, mutation, API, and integration tests
 frontend/src/            # React operator UI and provenance summary
-docs/                    # Phase 0–4 implementation notes and security docs
 ```
 
 ## Quick start
@@ -113,16 +114,16 @@ Included:
 - Phase 1–2: versioned ledger, activities/relations/support groups, Memory/RAG versions, topology-aware propagation and run isolation.
 - Phase 3: deterministic action contracts, effect/capability/scope checks, structured detector evidence, constant-delay denial, release/reissue policy and human-review cost estimate.
 - Phase 4: conservative/tight projections, witness/cover solvers, independent checker, three-state semantics, certificate verification, retention/repair, post-state checks, labels and action-boundary queue.
+- Mechanism and end-to-end validation: unified experiment runner, method adapters, immutable run packages, timeout/failure semantics and trial isolation.
+- External benchmark integration boundary: adapter contracts and write-once raw-output archives. External datasets and reproduced paper results are not included.
 
 Explicitly excluded from this repository release:
 
-- Phase 5 external baseline reproduction.
-- Phase 6 preregistered M/E/X experiments and paper-level statistical claims.
+- Private architecture documents, requirements, task cards and internal implementation reports.
+- Preregistration records, M/E/X experiment configurations, acceptance reports and paper-level statistical claims.
 - AgentDojo/A2ASecBench external datasets or copied benchmark data.
 - Runtime SQLite/Chroma stores, generated reports, logs, caches, model weights, secrets and private payloads.
 
 ## Data and contribution policy
 
-Runtime data is ignored by `.gitignore` (`*.db`, `backend/data/`, Chroma stores, logs, temporary output and local QA artifacts). Before opening a pull request, inspect `git diff --cached --name-only` and confirm that only source code, tests and documentation are staged. Do not commit `.env`, API keys, raw payloads, generated experiment results or database files.
-
-See [docs/Phase1-4核心运行实现报告.md](docs/Phase1-4核心运行实现报告.md) for the implementation mapping.
+Runtime data and private research materials are ignored by `.gitignore` (`*.db`, `backend/data/`, `docs/`, `experiments/`, logs, temporary output and local QA artifacts). Before opening a pull request, inspect `git diff --cached --name-only` and confirm that only source code, tests and public help files are staged. Do not commit `.env`, API keys, raw payloads, internal documents, generated experiment results or database files.

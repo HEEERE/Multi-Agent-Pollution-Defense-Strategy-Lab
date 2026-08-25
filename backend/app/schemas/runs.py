@@ -7,10 +7,14 @@ from app.schemas.common import new_id
 
 
 class RunStatus(StrEnum):
+    PENDING = "pending"
     QUEUED = "queued"
     RUNNING = "running"
     COMPLETED = "completed"
     FAILED = "failed"
+    TIMEOUT = "timeout"
+    UNKNOWN = "unknown"
+    EXCLUDED = "excluded"
     CANCELLED = "cancelled"
 
 

@@ -81,12 +81,14 @@ class RuntimeWitnessChecker:
             )
         witnesses: list[RuntimeWitness] = []
         for sink_id in sink_versions:
+            # A denied/invalidated sink is a deliberate cut even when the
+            # visible projection has already removed its artifact row.
+            if sink_id in blocked_versions:
+                continue
             if sink_id not in graph.versions:
                 return RuntimeCheckResult(
                     RuntimeCheckStatus.UNKNOWN, (), False, "SINK_NOT_IN_GRAPH"
                 )
-            if sink_id in blocked_versions:
-                continue
             stack: list[tuple[str, tuple[str, ...], frozenset[str]]] = [(sink_id, (sink_id,), frozenset())]
             seen: set[tuple[str, frozenset[str]]] = set()
             while stack:

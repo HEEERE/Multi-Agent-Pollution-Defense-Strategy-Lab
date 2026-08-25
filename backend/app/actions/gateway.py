@@ -28,7 +28,8 @@ class ActionGateway:
     def __init__(self, ledger: ProvenanceLedger, *, policy: DeterministicPolicy | None = None,
                  effect_mode: str = "live", config: GatewayConfig | None = None,
                  security_kernel: SecurityKernel | None = None,
-                 boundary_queue: ActionBoundaryQueue | None = None) -> None:
+                 boundary_queue: ActionBoundaryQueue | None = None,
+                 boundary_repair=None) -> None:
         config = config or GatewayConfig(effect_mode=effect_mode)
         if effect_mode != config.effect_mode:
             raise ValueError("effect_mode and config.effect_mode disagree")
@@ -40,6 +41,10 @@ class ActionGateway:
         self._config = config
         self._security_kernel = security_kernel or SecurityKernel()
         self._boundary_queue = boundary_queue or ActionBoundaryQueue(ledger)
+        # Injected rather than imported: the gateway must not depend on the state
+        # authority, and v4 §11.1 keeps that direction one-way. ``RunEngine``
+        # supplies it because only the run knows its ``horizon_closure``.
+        self._boundary_repair = boundary_repair
         self._handlers: dict[tuple[str, str], Handler] = {}
         self._denial_counts: dict[str, int] = {}
 
@@ -50,6 +55,13 @@ class ActionGateway:
     @property
     def boundary_queue(self) -> ActionBoundaryQueue:
         return self._boundary_queue
+
+    @property
+    def boundary_repair(self):
+        return self._boundary_repair
+
+    def has_handler(self, tool_id: str, operation: str) -> bool:
+        return (tool_id, operation) in self._handlers
 
     def register(self, tool_id: str, operation: str, handler: Handler) -> None:
         self._handlers[(tool_id, operation)] = handler
@@ -202,6 +214,11 @@ class ActionGateway:
         self._denial_counts[request.actor_agent_id] = count
         if count >= self._config.probing_quarantine_threshold:
             await self._boundary_queue.quarantine_agent(request.actor_agent_id)
+        # A contamination denial is new reachability information. v4 §5.3 requires
+        # retention to be re-adjudicated here, and §8.4 rule 5 requires the scope
+        # to be requeued; the repair itself decides whether this reason applies.
+        if self._boundary_repair is not None:
+            await self._boundary_repair.at_boundary(request, internal_reason)
         return ActionResult(request.action_id, decision, False, reason_code=internal_reason,
                             snapshot_hash=self._ledger.snapshot(request.run_id).snapshot_hash,
                             authority_eligible=False, simulated_effect=simulated_effect,

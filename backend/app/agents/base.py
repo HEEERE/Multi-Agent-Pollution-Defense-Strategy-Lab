@@ -31,6 +31,7 @@ class BaseAgent:
         system_prompt: str | None = None,
         tools: list[str] | None = None,
         downstream: list[str] | None = None,
+        metadata: dict | None = None,
     ) -> None:
         self.node_id = node_id
         self.bus = bus
@@ -43,6 +44,7 @@ class BaseAgent:
         # chain (RAG -> A -> memory -> B -> tool) silently never propagates past
         # its first hop.
         self.downstream = list(downstream or [])
+        self.metadata = dict(metadata or {})
         self._conversation_history: list[ChatMessage] = [
             ChatMessage(role="system", content=self.system_prompt)
         ]
@@ -50,6 +52,41 @@ class BaseAgent:
 
     def _output_targets(self) -> list[str]:
         return self.downstream or [self.DEFAULT_TARGET]
+
+    def _output_context(self, event: AgentEvent, target: str, *, effect_class: str | None = None) -> tuple[list[str], dict]:
+        inherited = event.metadata or {}
+        downstream_effects = self.metadata.get("downstream_effects", {}) or {}
+        downstream_operations = self.metadata.get("downstream_operations", {}) or {}
+        selected_effect = effect_class or downstream_effects.get(
+            target, self.metadata.get("effect_class", "E0")
+        )
+        refs = list(dict.fromkeys(
+            list(event.artifact_refs or inherited.get("artifact_refs", ()) or ())
+            + [f"event_{event.event_id}"]
+        ))
+        tool_description_ids = list(self.metadata.get("tool_description_ids", ()) or ())
+        if not tool_description_ids:
+            tool_description_ids = [f"tool_description:{tool_id}" for tool_id in self.tools]
+        metadata = {
+            "artifact_refs": refs,
+            "system_prompt_id": self.metadata.get("system_prompt_id", f"system_prompt:{self.node_id}"),
+            "system_prompt": self.system_prompt,
+            "few_shot_ids": list(self.metadata.get("few_shot_ids", ()) or ()),
+            "few_shot_values": dict(self.metadata.get("few_shot_values", {}) or {}),
+            "tool_description_ids": tool_description_ids,
+            "tool_descriptions": dict(self.metadata.get("tool_descriptions", {}) or {}),
+            "tool_description_integrity": self.metadata.get("tool_description_integrity", "high"),
+            "effect_class": str(selected_effect),
+            "operation": str(downstream_operations.get(
+                target,
+                "tool_call" if target in (set(self.metadata.get("tool_targets", ())) | set(self.tools))
+                else "communication",
+            )),
+            "capabilities": list(self.metadata.get("capabilities", ()) or ()),
+            "resource_scope": str(self.metadata.get("resource_scope", "default")),
+            "reversible": bool(self.metadata.get("reversible", str(selected_effect) != "E3")),
+        }
+        return refs, metadata
 
     async def handle_event(self, event: AgentEvent) -> None:
         if event.source_node == self.node_id:
@@ -82,11 +119,17 @@ class BaseAgent:
             for target in self._output_targets():
                 if target == event.source_node:
                     continue  # do not bounce straight back at the sender
+                refs, metadata = self._output_context(event, target)
+                event_type = (
+                    EventType.TOOL_CALL
+                    if target in set(self.metadata.get("tool_targets", ()))
+                    else EventType.COMMUNICATION
+                )
                 await self.bus.publish(
                     AgentEvent(
                         trace_id=trace_id,
                         parent_event_id=parent_id,
-                        event_type=EventType.COMMUNICATION,
+                        event_type=event_type,
                         source_node=self.node_id,
                         target_node=target,
                         payload_snippet=response[:500],
@@ -94,6 +137,9 @@ class BaseAgent:
                         action_taken=event.action_taken,
                         severity=event.severity,
                         monitor_level=MonitorLevel.NONE,
+                        trust_level=event.trust_level,
+                        artifact_refs=refs,
+                        metadata=metadata,
                     )
                 )
 
@@ -183,7 +229,21 @@ class BaseAgent:
         status: EventStatus = EventStatus.SAFE,
         action_taken: ActionTaken = ActionTaken.NONE,
         parent_event_id: str | None = None,
+        artifact_refs: list[str] | None = None,
+        effect_class: str | None = None,
     ) -> AgentEvent | None:
+        parent = AgentEvent(
+            event_id=parent_event_id or f"manual_{self.node_id}",
+            event_type=EventType.COMMUNICATION,
+            source_node=self.node_id,
+            target_node=target_node,
+            payload_snippet="",
+            artifact_refs=list(artifact_refs or ()),
+        )
+        refs, metadata = self._output_context(parent, target_node, effect_class=effect_class)
+        if parent_event_id is None:
+            refs = list(artifact_refs or ())
+            metadata["artifact_refs"] = refs
         return await self.bus.publish(
             AgentEvent(
                 trace_id=get_current_trace_id() or "",
@@ -195,6 +255,9 @@ class BaseAgent:
                 status=status,
                 action_taken=action_taken,
                 severity=EventSeverity.WARNING if status != EventStatus.SAFE else EventSeverity.INFO,
+                trust_level=str(self.metadata.get("trust_level", "trusted")),
+                artifact_refs=refs,
+                metadata=metadata,
             )
         )
 
@@ -204,7 +267,21 @@ class BaseAgent:
         payload: str,
         status: EventStatus = EventStatus.SAFE,
         parent_event_id: str | None = None,
+        artifact_refs: list[str] | None = None,
+        effect_class: str | None = None,
     ) -> AgentEvent | None:
+        parent = AgentEvent(
+            event_id=parent_event_id or f"manual_{self.node_id}",
+            event_type=EventType.COMMUNICATION,
+            source_node=self.node_id,
+            target_node=target_node,
+            payload_snippet="",
+            artifact_refs=list(artifact_refs or ()),
+        )
+        refs, metadata = self._output_context(parent, target_node, effect_class=effect_class)
+        if parent_event_id is None:
+            refs = list(artifact_refs or ())
+            metadata["artifact_refs"] = refs
         return await self.bus.publish(
             AgentEvent(
                 trace_id=get_current_trace_id() or "",
@@ -216,5 +293,8 @@ class BaseAgent:
                 status=status,
                 action_taken=ActionTaken.NONE,
                 severity=EventSeverity.WARNING if status != EventStatus.SAFE else EventSeverity.INFO,
+                trust_level=str(self.metadata.get("trust_level", "trusted")),
+                artifact_refs=refs,
+                metadata=metadata,
             )
         )

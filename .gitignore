@@ -90,3 +90,14 @@ backend/.pytest_tmp/
 
 # Private research specification (kept locally, never published)
 /最终方案-v4-不对称重构版.md
+
+# Private research documents and experiment materials (local only)
+/docs/
+/experiments/
+/MAJD-Guard-PPT/
+/方案备份/
+/*.zip
+/*.md
+!/README.md
+!/CONTRIBUTING.md
+!/CHANGELOG.md

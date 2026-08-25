@@ -81,31 +81,106 @@ def test_online_runtime_does_not_import_research_or_oracle():
     )
 
 
-def test_verification_layer_stays_independent_of_solvers():
-    """Placeholder boundary for Phase 4.
+SOLVER_AND_TIGHT_MODULES = (
+    "app.state.exact_solver",
+    "app.state.greedy_solver",
+    "app.state.asymmetric_repair",
+    "app.provenance.tight_builder",
+)
 
-    The v4 plan requires ``verification/`` to share no implementation with the
-    optimiser or the tight-graph builder, so the residual checker cannot inherit
-    an optimiser bug. The directory does not exist yet; when it does, this test
-    starts enforcing the rule instead of skipping.
-    """
-    verification = APP / "verification"
-    if not verification.is_dir():
-        import pytest
 
-        pytest.skip("app/verification does not exist yet (Phase 4)")
-
-    forbidden = ("app.state.exact_solver", "app.state.greedy_solver",
-                 "app.provenance.tight_builder")
+def _forbidden_imports(root: Path, forbidden: tuple[str, ...]) -> list[str]:
     violations: list[str] = []
-    for path in verification.rglob("*.py"):
+    for path in sorted(root.rglob("*.py")):
         for mod in _imported_modules(path):
             if any(mod == f or mod.startswith(f + ".") for f in forbidden):
                 violations.append(f"{path.name} imports {mod}")
+    return violations
+
+
+def test_forbidden_modules_all_exist():
+    """Guard against the boundary test passing because its targets are missing.
+
+    ``test_verification_layer_stays_independent_of_solvers`` can only catch a
+    violation of modules that exist. If one is renamed or deleted, the check
+    silently degrades into a tautology, so assert presence separately.
+    """
+    missing = [
+        name for name in SOLVER_AND_TIGHT_MODULES
+        if not (APP / Path(*name.split(".")[1:])).with_suffix(".py").is_file()
+    ]
+    assert not missing, (
+        "boundary test would be vacuous — these modules no longer exist: "
+        + ", ".join(missing)
+    )
+
+
+def test_verification_layer_stays_independent_of_solvers():
+    """``verification/`` must share no implementation with the optimiser.
+
+    The v4 plan (§4.2, §11.1) requires the independent checker to re-derive its
+    own conclusions. If it imported the solver it could inherit the solver's
+    bug and then certify it; if it imported the tight builder it could inherit
+    the tight view's optimism. Enforced structurally, not by convention.
+    """
+    violations = _forbidden_imports(APP / "verification", SOLVER_AND_TIGHT_MODULES)
     assert not violations, (
         "independent checker shares implementation with the optimiser:\n  "
         + "\n  ".join(violations)
     )
+
+
+def test_verification_layer_does_not_import_state_at_all():
+    """``verification/`` depends only on ``provenance/`` and itself.
+
+    Stronger than §11.1, and it earns its keep twice over. ``state/`` imports
+    ``verification/`` (the repair plan calls the independent checker), so any
+    import back the other way is a cycle waiting to happen — one did happen, via
+    ``state.costs``, and this is what keeps it from coming back. It also removes
+    the need to argue case-by-case about which ``state`` modules are safe to
+    share: the checker takes the residual view as plain sets and re-derives the
+    rest.
+    """
+    allowed = ("app.provenance", "app.verification")
+    violations: list[str] = []
+    for path in sorted((APP / "verification").rglob("*.py")):
+        for mod in _imported_modules(path):
+            if mod.startswith("app.") and not mod.startswith(allowed):
+                violations.append(f"{path.name} imports {mod}")
+    assert not violations, (
+        "verification/ must depend only on provenance/ and itself:\n  "
+        + "\n  ".join(violations)
+    )
+
+
+def test_actions_layer_does_not_import_the_state_authority():
+    """``actions/`` is the policy and execution boundary; ``state/`` is the state
+    authority. The dependency may only run state -> actions.
+
+    v4 §8.4 requires the gateway to invoke the asymmetric repair at every
+    contamination denial, which is a pull in the forbidden direction. It is
+    resolved by injection: ``ActionGateway`` holds a duck-typed
+    ``boundary_repair`` handle that ``RunEngine.create_run`` supplies, because
+    only the run knows its ``horizon_closure``. If someone later imports
+    ``app.state`` here to "simplify" that, the cycle comes back.
+    """
+    violations = _forbidden_imports(APP / "actions", ("app.state",))
+    assert not violations, (
+        "actions/ must not depend on the state authority; inject instead:\n  "
+        + "\n  ".join(violations)
+    )
+
+
+def test_tight_builder_is_not_reachable_through_the_graph_type():
+    """The graph *type* must not drag the tight builder in with it.
+
+    ``verification/`` legitimately imports ``provenance.projection`` for the
+    ProvenanceGraph type. That import must not transitively expose the tight
+    builder, otherwise the boundary above is trivially bypassable.
+    """
+    imported = _imported_modules(APP / "provenance" / "projection.py")
+    assert "app.provenance.tight_builder" not in imported
+    assert "app.provenance.conservative_builder" not in imported
 
 
 def test_scale_study_is_importable_without_the_runtime():

@@ -14,6 +14,23 @@ BroadcastHook = Callable[[AgentEvent], Awaitable[None]]
 async def _noop_action():
     return None
 
+
+def integrity_of(trust_level: str) -> str:
+    """Map the event ``trust_level`` vocabulary onto the integrity vocabulary.
+
+    Two different vocabularies meet here. Events carry
+    ``trusted | untrusted | unknown``; the ledger and ``ActionArgument`` carry
+    ``high | low | unknown``. Both the provenance write and the ActionRequest
+    must use the same mapping, otherwise the policy compares an event-level
+    word against an integrity-level word and the comparison silently never
+    matches. Keep this the single definition.
+    """
+    if trust_level == "trusted":
+        return "high"
+    if trust_level == "untrusted":
+        return "low"
+    return "unknown"
+
 # Actions and statuses that stop delivery. ALERT/CHALLENGE/DECOY are observation
 # outcomes and stay deliverable; only these mean "contained".
 _CONTAINED_ACTIONS = frozenset(
@@ -76,6 +93,7 @@ class MessageBus:
         self._provenance_ledger = None
         self._provenance_run_id: str | None = None
         self._action_gateway = None
+        self._effect_sandbox = None
 
     def bind_event_store(self, event_store) -> None:
         self._event_store = event_store
@@ -93,9 +111,24 @@ class MessageBus:
     def bind_action_gateway(self, gateway) -> None:
         self._action_gateway = gateway
 
+    def bind_effect_sandbox(self, sandbox) -> None:
+        self._effect_sandbox = sandbox
+
+    @property
+    def effect_sandbox(self):
+        return self._effect_sandbox
+
     @property
     def action_gateway(self):
         return self._action_gateway
+
+    @property
+    def provenance_ledger(self):
+        return self._provenance_ledger
+
+    @property
+    def provenance_run_id(self) -> str | None:
+        return self._provenance_run_id
 
     def bind_topology(self, edges, monitors: list[str] | None = None) -> None:
         """Bind strategy routing constraints and passive monitor identities."""
@@ -176,6 +209,7 @@ class MessageBus:
         # backwards-compatible, while tool/effect metadata opts into the
         # structured ActionRequest path before persistence or delivery.
         if self._action_gateway is not None:
+            inspected_event = self._materialize_context_inputs(inspected_event)
             inspected_event = await self._authorize_event_action(inspected_event)
 
         if (
@@ -323,21 +357,26 @@ class MessageBus:
             effect = EffectClass(raw_effect)
         except ValueError:
             effect = EffectClass.E1
-        refs = tuple(event.artifact_refs or metadata.get("artifact_refs", ()) or ())
+        refs = self._visible_input_ids(event)
+        operation = str(metadata.get("operation") or event.event_type.value)
         request = ActionRequest(
             action_id=event.event_id,
             run_id=str(metadata.get("run_id") or self._provenance_run_id or "default"),
             actor_agent_id=event.source_node,
             tool_id=event.target_node,
-            operation=event.event_type.value,
-            arguments=(ActionArgument("payload", event.payload_snippet, refs, "content", event.trust_level),),
+            operation=operation,
+            arguments=(ActionArgument("payload", event.payload_snippet, refs, "content",
+                                      integrity_of(event.trust_level)),),
             capability_requested=frozenset(metadata.get("capabilities", ()) or ()),
             resource_scope=str(metadata.get("resource_scope", "default")),
             effect_class=effect,
             reversible=bool(metadata.get("reversible", effect in {EffectClass.E0, EffectClass.E1, EffectClass.E2})),
             deadline=metadata.get("deadline"),
         )
-        self._action_gateway.register(event.target_node, event.event_type.value, lambda _request: _noop_action())
+        if not self._action_gateway.has_handler(event.target_node, operation):
+            self._action_gateway.register(
+                event.target_node, operation, lambda _request: _noop_action()
+            )
         result = await self._action_gateway.submit(request)
         if result.decision is SecurityDecision.ALLOW:
             return event
@@ -353,6 +392,87 @@ class MessageBus:
                 "public_reason": result.public_reason or "denied: policy",
             },
         })
+
+    @staticmethod
+    def _visible_input_ids(event: AgentEvent) -> tuple[str, ...]:
+        metadata = event.metadata or {}
+        return tuple(dict.fromkeys(str(item) for item in (
+            list(event.artifact_refs or metadata.get("artifact_refs", ()) or ())
+            + ([metadata["system_prompt_id"]] if metadata.get("system_prompt_id") else [])
+            + list(metadata.get("few_shot_ids", ()) or ())
+            + list(metadata.get("tool_description_ids", ()) or ())
+        )))
+
+    def _materialize_context_inputs(self, event: AgentEvent) -> AgentEvent:
+        """Commit declared prompts/examples/tool descriptions before authorization.
+
+        Formal E1--E3 actions fail closed on an unknown reference.  Context that
+        was actually visible to an agent therefore needs a real immutable
+        artifact version, not merely a string in event metadata.
+        """
+        ledger = self._provenance_ledger
+        if ledger is None:
+            return event
+        from app.provenance.models import ArtifactKind, ArtifactVersion
+        import hashlib
+        import json
+
+        metadata = dict(event.metadata or {})
+        run_id = str(metadata.get("run_id") or self._provenance_run_id or "default")
+        ledger.ensure_run(run_id)
+
+        def ensure(logical_id: str, value: object, kind: ArtifactKind, integrity: str) -> str:
+            if ledger.get_artifact(logical_id) is not None:
+                return logical_id
+            material = json.dumps(
+                [run_id, logical_id, value], ensure_ascii=False, sort_keys=True, default=str
+            ).encode()
+            version_id = f"ctx_{hashlib.sha256(material).hexdigest()[:24]}"
+            if ledger.get_artifact(version_id) is None:
+                ledger.append_artifact(ArtifactVersion(
+                    version_id=version_id,
+                    artifact_id=logical_id,
+                    run_id=run_id,
+                    kind=kind,
+                    value_hash=hashlib.sha256(
+                        json.dumps(value, ensure_ascii=False, sort_keys=True, default=str).encode()
+                    ).hexdigest(),
+                    origin_principals=frozenset({"platform_configuration"}),
+                    integrity=integrity,
+                    metadata={"context_input": True, "logical_id": logical_id},
+                ))
+            return version_id
+
+        if metadata.get("system_prompt_id"):
+            metadata["system_prompt_id"] = ensure(
+                str(metadata["system_prompt_id"]), metadata.get("system_prompt", ""),
+                ArtifactKind.MESSAGE, "high",
+            )
+
+        few_shot_ids = []
+        few_shot_values = metadata.get("few_shot_values", {}) or {}
+        for logical_id in metadata.get("few_shot_ids", ()) or ():
+            few_shot_ids.append(ensure(
+                str(logical_id), few_shot_values.get(str(logical_id), logical_id),
+                ArtifactKind.MESSAGE, "high",
+            ))
+        metadata["few_shot_ids"] = few_shot_ids
+
+        tool_description_ids = []
+        tool_descriptions = metadata.get("tool_descriptions", {}) or {}
+        description_integrity = str(metadata.get("tool_description_integrity", "high"))
+        for logical_id in metadata.get("tool_description_ids", ()) or ():
+            tool_description_ids.append(ensure(
+                str(logical_id), tool_descriptions.get(str(logical_id), logical_id),
+                ArtifactKind.TOOL_RESULT, description_integrity,
+            ))
+        metadata["tool_description_ids"] = tool_description_ids
+
+        refs = tuple(dict.fromkeys(
+            list(event.artifact_refs or metadata.get("artifact_refs", ()) or ())
+            + ([f"event_{event.parent_event_id}"] if event.parent_event_id else [])
+        ))
+        return event.model_copy(update={"metadata": metadata, "artifact_refs": list(refs)})
 
     async def emit(self, event: AgentEvent) -> AgentEvent:
         trace_id = get_current_trace_id()
@@ -414,7 +534,11 @@ class MessageBus:
         import hashlib
         import json
 
-        run_id = str(event.metadata.get("run_id") if event.metadata else None or self._provenance_run_id or "default")
+        run_id = str(
+            (event.metadata or {}).get("run_id")
+            or self._provenance_run_id
+            or "default"
+        )
         ledger.ensure_run(run_id)
         kind_map = {
             "input": ArtifactKind.MESSAGE,
@@ -422,14 +546,9 @@ class MessageBus:
             "tool_call": ArtifactKind.TOOL_RESULT,
         }
         kind = kind_map.get(event.event_type.value, ArtifactKind.MESSAGE)
-        integrity = "high" if event.trust_level == "trusted" else "low" if event.trust_level == "untrusted" else "unknown"
+        integrity = integrity_of(event.trust_level)
         metadata = event.metadata or {}
-        visible_inputs = tuple(dict.fromkeys(str(item) for item in (
-            list(event.artifact_refs or metadata.get("artifact_refs", ()) or ())
-            + ([metadata["system_prompt_id"]] if metadata.get("system_prompt_id") else [])
-            + list(metadata.get("few_shot_ids", ()) or ())
-            + list(metadata.get("tool_description_ids", ()) or ())
-        )))
+        visible_inputs = self._visible_input_ids(event)
         parent_versions = list(visible_inputs)
         if event.parent_event_id:
             parent_versions.append(f"event_{event.parent_event_id}")
@@ -476,7 +595,9 @@ class MessageBus:
                     activity_id=event.event_type.value, relation_type="derived_from",
                 ))
         for index, parent_id in enumerate(visible_inputs):
-            p1_id = parent_id if str(parent_id).startswith("event_") else f"event_{parent_id}"
+            raw_id = str(parent_id)
+            prefixed_id = raw_id if raw_id.startswith("event_") else f"event_{raw_id}"
+            p1_id = raw_id if ledger.get_artifact(raw_id) is not None else prefixed_id
             if p1_id == artifact.version_id or ledger.get_artifact(p1_id) is None:
                 continue
             ledger.append_derivation(Derivation(
