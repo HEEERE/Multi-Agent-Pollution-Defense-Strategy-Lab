@@ -7,7 +7,8 @@ import pytest
 from app.actions import ActionArgument, ActionBoundaryQueue, ActionGateway, ActionRequest, DeterministicPolicy, EffectClass, SecurityDecision, estimate_human_approval_cost
 from app.provenance import ProvenanceLedger
 from app.provenance.models import ArtifactKind, ArtifactState, ArtifactVersion, Derivation, ProvenanceLevel, StateTransition, SupportGroup
-from app.provenance.projection import build_conservative, build_tight
+from app.provenance.conservative_builder import build_conservative
+from app.provenance.tight_builder import build_tight
 from app.runtime import RunEngine, RunManifest
 from app.verification import CertificateChecker, ReissuePolicy, ResidualChecker, RuntimeCheckStatus, RuntimeWitnessChecker
 

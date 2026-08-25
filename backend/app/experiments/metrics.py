@@ -211,10 +211,8 @@ class AggregateMetrics:
         self.metrics_list = metrics_list
         self._random = random.Random(seed)
         self._field_names = [
-            "propagation_depth", "time_to_detection_ms", "false_positive_rate",
-            "intervention_effectiveness", "detection_latency_ms",
-            "contamination_spread_rate", "total_events", "threats_detected",
-            "threats_blocked", "cascade_depth",
+            name for name, model_field in ExperimentMetrics.model_fields.items()
+            if name != "metadata" and model_field.annotation in {int, float}
         ]
 
     def compute(self) -> dict:

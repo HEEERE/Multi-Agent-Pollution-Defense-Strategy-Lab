@@ -96,6 +96,9 @@ class ExperimentStatus(StrEnum):
     COMPLETED = "completed"
     FAILED = "failed"
     STOPPED = "stopped"
+    TIMEOUT = "timeout"
+    UNKNOWN = "unknown"
+    EXCLUDED = "excluded"
 
 
 class ExperimentMetrics(BaseModel):
@@ -109,6 +112,37 @@ class ExperimentMetrics(BaseModel):
     threats_detected: int = 0
     threats_blocked: int = 0
     cascade_depth: int = 0
+    unsafe_sink_escape: int = 0
+    certified_escape: int = 0
+    e3_bypass: int = 0
+    residual_witness_count: int = 0
+    certificate_validity: float = 1.0
+    label_enforcement_violations: int = 0
+    benign_task_success: float = 0.0
+    attacked_task_success: float = 0.0
+    overblocking: float = 0.0
+    recovery_success: float = 0.0
+    benign_state_preservation: float = 1.0
+    recontamination: int = 0
+    time_to_recovery_ms: float = 0.0
+    c_op: float = 0.0
+    l_task: float = 0.0
+    c_replay: float = 0.0
+    c_human: float = 0.0
+    objective_j: float = 0.0
+    solver_latency_ms: float = 0.0
+    checker_latency_ms: float = 0.0
+    llm_calls: int = 0
+    tokens: int = 0
+    ledger_storage_bytes: int = 0
+    timeout_count: int = 0
+    unknown_count: int = 0
+    unsatisfiable_count: int = 0
+    starvation_count: int = 0
+    deadline_miss_rate: float = 0.0
+    requeue_count: int = 0
+    boundary_repairs: int = 0
+    sandbox_side_effects: int = 0
     metadata: dict[str, Any] = Field(default_factory=dict)
 
 

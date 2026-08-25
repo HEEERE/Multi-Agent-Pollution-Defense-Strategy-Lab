@@ -4,7 +4,8 @@ from fastapi import APIRouter, HTTPException, Query
 
 from app.event_store import get_event_store
 from app.provenance import ProvenanceLedger
-from app.provenance.projection import build_conservative, build_tight
+from app.provenance.conservative_builder import build_conservative
+from app.provenance.tight_builder import build_tight
 
 router = APIRouter()
 

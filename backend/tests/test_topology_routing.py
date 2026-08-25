@@ -21,6 +21,7 @@ from app.schemas import (
     TopologyConfig,
 )
 from app.simulation.topology_builder import TopologyBuilder
+from app.runtime import RunEngine, RunManifest
 
 
 class _StubLLM:
@@ -45,6 +46,15 @@ def _event(target: str, source: str = "gateway") -> AgentEvent:
         target_node=target,
         payload_snippet="please process this task",
     )
+
+
+def _runtime_bus(run_id: str = "topology-routing") -> MessageBus:
+    context = RunEngine().create_run(RunManifest(run_id=run_id))
+    bus = MessageBus()
+    bus.bind_provenance_ledger(context.ledger, run_id)
+    bus.bind_action_gateway(context.gateway)
+    bus.bind_effect_sandbox(context.effect_sandbox)
+    return bus
 
 
 class TestDownstreamRouting:
@@ -121,7 +131,7 @@ class TestBuilderWiring:
                 EdgeConfig(source="agent_b", target="tool_x"),
             ],
         )
-        nodes = TopologyBuilder(cfg, MessageBus(), _StubLLM()).build()
+        nodes = TopologyBuilder(cfg, _runtime_bus("builder-successors"), _StubLLM()).build()
         assert nodes["agent_a"].downstream == ["agent_b"]
         assert nodes["agent_b"].downstream == ["tool_x"]
 
@@ -141,7 +151,7 @@ class TestBuilderWiring:
             ],
             monitors=["watcher"],
         )
-        nodes = TopologyBuilder(cfg, MessageBus(), _StubLLM()).build()
+        nodes = TopologyBuilder(cfg, _runtime_bus("builder-monitors"), _StubLLM()).build()
         assert nodes["agent_a"].downstream == ["agent_b"]
 
     async def test_chain_propagates_past_the_first_hop(self):
@@ -158,7 +168,7 @@ class TestBuilderWiring:
                 EdgeConfig(source="agent_b", target="tool_x"),
             ],
         )
-        bus = MessageBus()
+        bus = _runtime_bus("builder-chain")
         nodes = TopologyBuilder(cfg, bus, _StubLLM()).build()
 
         await nodes["agent_a"].handle_event(_event("agent_a"))

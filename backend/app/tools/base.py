@@ -6,10 +6,11 @@ from app.schemas import ActionTaken, AgentEvent, EventStatus, EventType, new_tra
 
 
 class BaseTool:
-    def __init__(self, node_id: str, bus: MessageBus, gateway: ActionGateway | None = None) -> None:
+    def __init__(self, node_id: str, bus: MessageBus, gateway: ActionGateway | None = None, *, metadata: dict | None = None) -> None:
         self.node_id = node_id
         self.bus = bus
         self.gateway = gateway or bus.action_gateway
+        self.metadata = dict(metadata or {})
         if self.gateway is not None:
             async def _authorize_return(_request):
                 return None
@@ -27,6 +28,10 @@ class BaseTool:
             trace_id=event.trace_id,
             parent_event_id=event.event_id,
             run_id=str((event.metadata or {}).get("run_id") or "runtime"),
+            artifact_refs=list(dict.fromkeys(
+                list(event.artifact_refs or (event.metadata or {}).get("artifact_refs", ()) or ())
+                + [f"event_{event.event_id}"]
+            )),
         )
 
     async def return_result(
@@ -37,6 +42,7 @@ class BaseTool:
         trace_id: str | None = None,
         parent_event_id: str | None = None,
         run_id: str = "runtime",
+        artifact_refs: list[str] | None = None,
     ) -> AgentEvent | None:
         if self.gateway is not None:
             request = ActionRequest(
@@ -45,7 +51,10 @@ class BaseTool:
                 actor_agent_id=self.node_id,
                 tool_id=self.node_id,
                 operation="return_result",
-                arguments=(ActionArgument("payload", payload, semantic_role="content", integrity="high"),),
+                arguments=(ActionArgument(
+                    "payload", payload, tuple(artifact_refs or ()),
+                    semantic_role="content", integrity="high",
+                ),),
                 effect_class=EffectClass.E0,
             )
             result = await self.gateway.submit(request)
@@ -61,5 +70,12 @@ class BaseTool:
                 payload_snippet=payload,
                 status=status,
                 action_taken=ActionTaken.NONE,
+                artifact_refs=list(artifact_refs or ()),
+                metadata={
+                    "artifact_refs": list(artifact_refs or ()),
+                    "effect_class": "E0",
+                    "resource_scope": str(self.metadata.get("resource_scope", "default")),
+                    "reversible": True,
+                },
             )
         )

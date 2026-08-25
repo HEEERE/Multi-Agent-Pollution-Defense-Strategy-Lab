@@ -36,6 +36,8 @@ class DeterministicPolicy:
         if contract is not None:
             if request.effect_class is not contract.effect_class:
                 return PolicyDecision(SecurityDecision.DENY, "effect_contract_mismatch")
+            if request.reversible is not contract.reversible:
+                return PolicyDecision(SecurityDecision.DENY, "reversibility_contract_mismatch")
             if request.resource_scope not in contract.allowed_resource_scopes:
                 return PolicyDecision(SecurityDecision.DENY, "contract_resource_out_of_scope")
             if not contract.required_capabilities.issubset(request.capability_requested):
@@ -47,6 +49,8 @@ class DeterministicPolicy:
         allowed_scopes = self.scopes.get(request.actor_agent_id)
         if allowed_scopes is not None and request.resource_scope not in allowed_scopes:
             return PolicyDecision(SecurityDecision.DENY, "resource_out_of_scope")
+        if _effect_rank(request.effect_class) >= _effect_rank(EffectClass.E1) and not request.arguments:
+            return PolicyDecision(SecurityDecision.QUARANTINE, "unknown_provenance")
         for argument in request.arguments:
             argument_contract = None
             if contract is not None:
@@ -91,14 +95,12 @@ class DeterministicPolicy:
             return PolicyDecision(SecurityDecision.REQUIRE_APPROVAL, "platform_scope_requires_approval")
         if any(evidence.vetoes for evidence in request.model_evidence):
             return PolicyDecision(SecurityDecision.DENY, "model_evidence_veto")
-        unknown_e0 = request.effect_class is EffectClass.E0 and any(
-            ledger.current_state(ref) is None
-            for argument in request.arguments for ref in argument.artifact_refs
-        )
         return PolicyDecision(
             SecurityDecision.ALLOW,
             "deterministic_policy_pass",
-            authority_eligible=not unknown_e0,
+            # Read/query/transform actions may return data, but an E0 result is
+            # never itself an authorization token for a later state change.
+            authority_eligible=request.effect_class is not EffectClass.E0,
         )
 
 

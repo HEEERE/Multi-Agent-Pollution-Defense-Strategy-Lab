@@ -542,11 +542,21 @@ class EventStore:
     async def store_run(self, run: dict) -> None:
         conn = await self._get_conn()
         await conn.execute(
-            """INSERT OR REPLACE INTO runs
+            """INSERT INTO runs
                (run_id, strategy_id, strategy_version, experiment_id,
-                trace_id, status, error, metrics_json,
-                created_at, started_at, finished_at)
-               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+                 trace_id, status, error, metrics_json,
+                 created_at, started_at, finished_at)
+               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+               ON CONFLICT(run_id) DO UPDATE SET
+                 strategy_id=COALESCE(excluded.strategy_id, runs.strategy_id),
+                 strategy_version=COALESCE(excluded.strategy_version, runs.strategy_version),
+                 experiment_id=COALESCE(excluded.experiment_id, runs.experiment_id),
+                 trace_id=COALESCE(excluded.trace_id, runs.trace_id),
+                 status=excluded.status,
+                 error=excluded.error,
+                 metrics_json=COALESCE(excluded.metrics_json, runs.metrics_json),
+                 started_at=COALESCE(excluded.started_at, runs.started_at),
+                 finished_at=COALESCE(excluded.finished_at, runs.finished_at)""",
             (
                 run["run_id"],
                 run.get("strategy_id"),

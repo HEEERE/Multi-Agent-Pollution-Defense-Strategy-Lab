@@ -7,8 +7,6 @@ from app.schemas import (
     TopologyConfig,
 )
 from app.tools.base import BaseTool
-from app.actions import ActionGateway
-from app.provenance import ProvenanceLedger
 
 
 class TopologyBuilder:
@@ -18,13 +16,14 @@ class TopologyBuilder:
         self.llm_client = llm_client
         self.run_id = run_id or f"simulation:{config.name}"
         self.nodes: dict[str, BaseGateway | BaseAgent | BaseTool] = {}
+        self._node_configs = {node.node_id: node for node in config.nodes}
 
     def build(self) -> dict[str, BaseGateway | BaseAgent | BaseTool]:
         if self.bus.action_gateway is None:
-            ledger = ProvenanceLedger()
-            ledger.ensure_run(self.run_id)
-            self.bus.bind_provenance_ledger(ledger, self.run_id)
-            self.bus.bind_action_gateway(ActionGateway(ledger))
+            raise RuntimeError(
+                "TopologyBuilder requires a MessageBus bound by RunEngine; "
+                "topology construction is not a runtime authority"
+            )
         self.bus.bind_topology(self.config.edges, self.config.monitors)
         for node_cfg in self.config.nodes:
             node = self._create_node(node_cfg)
@@ -53,8 +52,25 @@ class TopologyBuilder:
         node_id = cfg.node_id
 
         if node_type == "gateway":
-            return BaseGateway(node_id, self.bus)
+            return BaseGateway(node_id, self.bus, metadata=cfg.metadata)
         elif node_type == "agent":
+            metadata = dict(cfg.metadata)
+            downstream_effects = dict(metadata.get("downstream_effects", {}) or {})
+            downstream_operations = dict(metadata.get("downstream_operations", {}) or {})
+            tool_targets = set(metadata.get("tool_targets", ()) or ())
+            for target in self._downstream(node_id):
+                target_cfg = self._node_configs.get(target)
+                if target_cfg is not None and target_cfg.node_type.lower() in {"tool", "memory"}:
+                    tool_targets.add(target)
+                    downstream_effects.setdefault(
+                        target, str(target_cfg.metadata.get("effect_class", "E1"))
+                    )
+                    downstream_operations.setdefault(
+                        target, str(target_cfg.metadata.get("operation", "tool_call"))
+                    )
+            metadata["downstream_effects"] = downstream_effects
+            metadata["downstream_operations"] = downstream_operations
+            metadata["tool_targets"] = sorted(tool_targets)
             return BaseAgent(
                 node_id=node_id,
                 bus=self.bus,
@@ -62,11 +78,14 @@ class TopologyBuilder:
                 system_prompt=cfg.system_prompt or None,
                 tools=cfg.tools,
                 downstream=self._downstream(node_id),
+                metadata=metadata,
             )
         elif node_type == "tool":
-            return BaseTool(node_id, self.bus, self.bus.action_gateway)
+            self._register_sandbox_tool(cfg)
+            return BaseTool(node_id, self.bus, self.bus.action_gateway, metadata=cfg.metadata)
         elif node_type == "memory":
-            return BaseTool(node_id, self.bus, self.bus.action_gateway)
+            self._register_sandbox_tool(cfg)
+            return BaseTool(node_id, self.bus, self.bus.action_gateway, metadata=cfg.metadata)
         elif node_type == "monitor":
             protected = [
                 node.node_id
@@ -80,3 +99,19 @@ class TopologyBuilder:
                 protected_nodes=protected,
             )
         return None
+
+    def _register_sandbox_tool(self, cfg: NodeConfig) -> None:
+        sandbox = self.bus.effect_sandbox
+        if sandbox is None:
+            return
+        raw_effect = str(cfg.metadata.get("effect_class", "E1"))
+        sandbox.register_tool(
+            self.bus.action_gateway,
+            tool_id=cfg.node_id,
+            operation=str(cfg.metadata.get("operation", "tool_call")),
+            effect_class=raw_effect,
+            resource_scopes=set(cfg.metadata.get("resource_scopes", ["default"]) or ["default"]),
+            required_capabilities=set(cfg.metadata.get("required_capabilities", ()) or ()),
+            reversible=cfg.metadata.get("reversible"),
+            required_integrity=cfg.metadata.get("required_integrity"),
+        )

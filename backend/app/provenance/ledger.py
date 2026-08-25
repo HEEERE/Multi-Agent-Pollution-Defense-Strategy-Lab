@@ -195,6 +195,11 @@ class ProvenanceLedger:
                 (run_id, policy_version, time.time()),
             )
 
+    def run_exists(self, run_id: str) -> bool:
+        return self._conn.execute(
+            "SELECT 1 FROM provenance_runs WHERE run_id=? LIMIT 1", (run_id,)
+        ).fetchone() is not None
+
     def _next_ledger_seq(self, run_id: str) -> int:
         row = self._conn.execute("SELECT ledger_seq FROM provenance_runs WHERE run_id=?", (run_id,)).fetchone()
         if row is None:
@@ -329,6 +334,12 @@ class ProvenanceLedger:
                                row["scope"], row["expiry"], tuple(json.loads(row["derivation_ids"])),
                                TaintClass(row["taint_class"]),
                                json.loads(row["metadata"]))
+
+    def version_ids(self, run_id: str) -> list[str]:
+        rows = self._conn.execute(
+            "SELECT version_id FROM artifact_versions WHERE run_id=? ORDER BY created_seq", (run_id,)
+        ).fetchall()
+        return [row[0] for row in rows]
 
     def list_artifacts(self, run_id: str) -> list[ArtifactVersion]:
         rows = self._conn.execute("SELECT version_id FROM artifact_versions WHERE run_id=? ORDER BY created_seq", (run_id,)).fetchall()
@@ -486,6 +497,74 @@ class ProvenanceLedger:
             "SELECT name,value FROM metrics WHERE run_id=?", (run_id,)
         ).fetchall()
         return {row["name"]: float(row["value"]) for row in rows}
+
+    def list_action_records(self, run_id: str) -> list[dict]:
+        rows = self._conn.execute(
+            "SELECT * FROM action_records WHERE run_id=? ORDER BY record_id", (run_id,)
+        ).fetchall()
+        return [self._decoded_row(row, {"details"}) for row in rows]
+
+    def list_denials(self, run_id: str) -> list[dict]:
+        rows = self._conn.execute(
+            "SELECT * FROM denial_records WHERE run_id=? ORDER BY created_at", (run_id,)
+        ).fetchall()
+        return [dict(row) for row in rows]
+
+    def list_decisions(self, run_id: str) -> list[dict]:
+        rows = self._conn.execute(
+            "SELECT * FROM decision_records WHERE run_id=? ORDER BY created_at", (run_id,)
+        ).fetchall()
+        return [dict(row) for row in rows]
+
+    def list_certificates(self, run_id: str) -> list[dict]:
+        rows = self._conn.execute(
+            "SELECT * FROM certificates WHERE run_id=? ORDER BY created_at", (run_id,)
+        ).fetchall()
+        return [self._decoded_row(row, {"payload"}) for row in rows]
+
+    def list_label_enforcements(self, run_id: str) -> list[dict]:
+        rows = self._conn.execute(
+            "SELECT * FROM label_enforcements WHERE run_id=? ORDER BY seq", (run_id,)
+        ).fetchall()
+        return [self._decoded_row(row, {"blocked_effects"}) for row in rows]
+
+    def list_state_transitions(self, run_id: str) -> list[dict]:
+        rows = self._conn.execute(
+            "SELECT * FROM state_transitions WHERE run_id=? ORDER BY seq", (run_id,)
+        ).fetchall()
+        return [dict(row) for row in rows]
+
+    def list_compensations(self, run_id: str) -> list[dict]:
+        rows = self._conn.execute(
+            "SELECT * FROM compensation_records WHERE run_id=? ORDER BY created_at", (run_id,)
+        ).fetchall()
+        return [self._decoded_row(row, {"details"}) for row in rows]
+
+    @staticmethod
+    def _decoded_row(row, json_fields: set[str]) -> dict:
+        result = dict(row)
+        for field in json_fields:
+            if field in result:
+                result[field] = json.loads(result[field])
+        return result
+
+    def storage_bytes(self) -> int:
+        page_count = int(self._conn.execute("PRAGMA page_count").fetchone()[0])
+        page_size = int(self._conn.execute("PRAGMA page_size").fetchone()[0])
+        return page_count * page_size
+
+    def backup(self, destination: str | Path) -> Path:
+        path = Path(destination)
+        path.parent.mkdir(parents=True, exist_ok=True)
+        with self._lock:
+            self._conn.commit()
+            target = sqlite3.connect(str(path))
+            try:
+                self._conn.backup(target)
+                target.commit()
+            finally:
+                target.close()
+        return path
 
     def has_low_integrity_ancestor(self, version_id: str) -> bool:
         seen: set[str] = set()

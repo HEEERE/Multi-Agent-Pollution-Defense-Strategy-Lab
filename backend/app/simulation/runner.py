@@ -16,6 +16,7 @@ from app.schemas import (
     TopologyConfig,
 )
 from app.simulation.topology_builder import TopologyBuilder
+from app.runtime import RunContext, RunEngine, RunManifest
 
 
 class SimulationRunner:
@@ -37,6 +38,39 @@ class SimulationRunner:
         self._events: list[AgentEvent] = []
         self._agent_events: dict[str, asyncio.Event] = {}
         self.run_id = str((config.metadata or {}).get("run_id") or self.trace_id)
+        self.runtime: RunEngine | None = None
+        self.runtime_context: RunContext | None = None
+
+    def _ensure_runtime_authority(self) -> None:
+        """Bind standalone simulations through the same RunEngine path.
+
+        Formal experiments arrive with an already-bound bus and reuse that
+        context.  API/demo simulations still work, but their authority is now
+        created here by RunEngine instead of being hidden inside TopologyBuilder.
+        """
+        if self.bus.action_gateway is not None:
+            bound_run_id = self.bus.provenance_run_id
+            if bound_run_id is not None and bound_run_id != self.run_id:
+                raise ValueError(
+                    f"simulation run_id {self.run_id!r} disagrees with bound "
+                    f"runtime {bound_run_id!r}"
+                )
+            return
+
+        metadata = dict(self.config.metadata or {})
+        manifest = RunManifest(
+            run_id=self.run_id,
+            topology=self.config.model_dump(mode="json"),
+            effect_mode=str(metadata.get("effect_mode", "live")),
+            horizon_closure=str(metadata.get("horizon_closure", "closed")),
+        )
+        self.runtime = RunEngine()
+        self.runtime_context = self.runtime.create_run(manifest)
+        self.bus.bind_provenance_ledger(
+            self.runtime_context.ledger, self.runtime_context.manifest.run_id
+        )
+        self.bus.bind_action_gateway(self.runtime_context.gateway)
+        self.bus.bind_effect_sandbox(self.runtime_context.effect_sandbox)
 
     async def run(self) -> list[AgentEvent]:
         set_trace_context(self.trace_id)
@@ -45,6 +79,7 @@ class SimulationRunner:
         set_run_context(self.run_id)
 
         try:
+            self._ensure_runtime_authority()
             builder = TopologyBuilder(self.config, self.bus, self.llm_client, run_id=self.run_id)
             nodes = builder.build()
 
@@ -90,6 +125,7 @@ class SimulationRunner:
                 **injection.metadata,
                 "injection_type": injection.injection_type.value,
             },
+            trust_level=str(injection.metadata.get("trust_level", "untrusted")),
         )
         published = await self.bus.publish(event)
         if self.label_sink is not None:
