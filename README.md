@@ -95,6 +95,16 @@ npm test -- --run
 
 The tests cover ledger append-only behavior, snapshot/TOCTOU checks, P0/P1 graph separation, action contracts, dry-run enforcement, overlapping/disjoint action queues, origin non-amplification, certificate/reissue bounds, exact-cover/brute-force agreement, attack/benign canaries, required-goal replay, retention labels, repair invariants, mutation rejection, and API/runtime regressions.
 
+### Experimental snapshot
+
+截至 2026-08-27，公开代码对应的机制与端到端验收结果如下（原始运行包、日志和实验报告不随仓库发布）：
+
+- 机制层：60 个边界案例通过独立答案校验；保守图对 authority edge 与危险证据链的召回率均为 100%；精确求解与独立穷举在可穷举实例上完全一致；120 个证书篡改样本全部被拒绝。
+- E-01/E-04：24 个正常任务和 72 个 canary 运行完成；无防御攻击臂出现 17 次危险出口逃逸，冻结 B1 与 RAISE-asymmetric 均为 0，certified escape、E3 bypass 和保留标签违规均为 0。
+- E-05 pilot：960/960 个预定运行完成，覆盖 12 对攻击/正常场景、4 种方法、2 种模型设置和 5 个配对种子；B0 共出现 170 次危险逃逸，B1、B9' 与 RAISE-asymmetric 均为 0。独立审计重算 960 个密封运行包的关键字段，差异为 0。
+
+这些结果支持“统一动作闸门、来源账本、边界修复和独立重算能够形成可审计的端到端防御链路”；它们不等同于 RAISE 在任务效用、综合成本或外部 benchmark 上全面领先的最终结论。
+
 ## API surface
 
 - `GET /api/v1/provenance/{run_id}?mode=conservative|tight`

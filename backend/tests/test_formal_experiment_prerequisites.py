@@ -63,7 +63,8 @@ def test_method_registry_rejects_unknown_and_exposes_frozen_baselines():
         set(METHOD_REGISTRY.available())
     )
     unavailable = {row["method_id"] for row in METHOD_REGISTRY.describe() if not row["available"]}
-    assert "b7_faithful" in unavailable and "b9_naive_compose" in unavailable
+    assert "b7_faithful" in unavailable and "b7_simplified" in unavailable
+    assert "b9_naive_compose" not in unavailable
     with pytest.raises(ValueError, match="unknown formal method_id"):
         METHOD_REGISTRY.get("unregistered-paper-baseline")
 

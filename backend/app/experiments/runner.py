@@ -125,7 +125,8 @@ class ExperimentRunner:
                     try:
                         events = await asyncio.wait_for(
                             method.execute(
-                                engine, iteration_config, label_sink=oracle.sink()
+                                engine, iteration_config, label_sink=oracle.sink(),
+                                context=context,
                             ),
                             timeout=manifest.budget.wall_clock_s,
                         )

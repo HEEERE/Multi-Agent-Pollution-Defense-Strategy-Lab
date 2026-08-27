@@ -60,6 +60,15 @@ class ActionGateway:
     def boundary_repair(self):
         return self._boundary_repair
 
+    def bind_boundary_repair(self, boundary_repair) -> None:
+        """Select the frozen per-method boundary strategy before execution.
+
+        ``RunEngine`` installs the RAISE asymmetric strategy by default. Formal
+        baseline adapters may replace it during ``prepare``; doing this through
+        an explicit method keeps method selection out of policy internals.
+        """
+        self._boundary_repair = boundary_repair
+
     def has_handler(self, tool_id: str, operation: str) -> bool:
         return (tool_id, operation) in self._handlers
 

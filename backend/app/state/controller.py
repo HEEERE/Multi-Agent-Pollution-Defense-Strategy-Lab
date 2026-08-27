@@ -116,15 +116,14 @@ class StateController:
             return RetentionResult(certificate, proposed, vetoed, frozenset())
         post_snapshot = self.ledger.snapshot(self.run_id)
         certificate = replace(certificate, post_state_hash=post_snapshot.snapshot_hash,
-                              retained_versions=tuple(sorted(allowed)))
+                              retained_versions=tuple(sorted(allowed)),
+                              integrity_hash="")
         # ``issue`` records the pre-state diagnostic certificate. Retention is
         # only authoritative after the atomic state transition and post-state
         # check, so persist a second, final certificate carrying the committed
         # post-state hash and retained set.
-        import hashlib, json
-        final_hash = hashlib.sha256(
-            json.dumps(certificate.__dict__, sort_keys=True, default=str).encode()
-        ).hexdigest()
+        certificate = checker.finalize(certificate)
+        final_hash = certificate.integrity_hash
         with self.ledger.atomic():
             for version_id in allowed:
                 artifact = self.ledger.get_artifact(version_id)
@@ -133,14 +132,6 @@ class StateController:
                     version_id=version_id, certificate_hash=final_hash,
                     confidentiality=artifact.confidentiality if artifact else "restricted",
                 ))
-        self.ledger.store_certificate(
-            final_hash,
-            self.run_id,
-            certificate.certificate_kind,
-            certificate.pre_snapshot_hash,
-            certificate.post_state_hash,
-            certificate.__dict__,
-        )
         return RetentionResult(certificate, proposed, vetoed, frozenset(allowed))
 
     def recheck_retained(self, retained_versions: set[str], sink_versions: set[str]) -> frozenset[str]:

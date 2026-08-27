@@ -1,7 +1,6 @@
 from __future__ import annotations
 
-from dataclasses import dataclass
-from dataclasses import replace
+from dataclasses import asdict, dataclass, is_dataclass, replace
 import hashlib
 import json
 import time
@@ -48,10 +47,41 @@ class Certificate:
     issued_at: float = 0.0
     reissue_policy: ReissuePolicy | None = None
     reissue_count: int = 0
+    integrity_hash: str = ""
 
     @property
     def valid(self) -> bool:
-        return self.status == "COVERED" and self.completeness == "EXHAUSTIVE"
+        horizon_allows_scope = not (
+            self.horizon_closure == "open"
+            and self.certificate_kind
+            in {"recovery_safety", "retention", "release", "declassify"}
+        )
+        return (
+            self.status == "COVERED"
+            and self.completeness == "EXHAUSTIVE"
+            and horizon_allows_scope
+            and bool(self.integrity_hash)
+        )
+
+
+def _jsonable(value):
+    """Canonical JSON value used for both hashing and Ledger persistence."""
+    if is_dataclass(value):
+        return _jsonable(asdict(value))
+    if isinstance(value, dict):
+        return {str(key): _jsonable(item) for key, item in sorted(value.items())}
+    if isinstance(value, (set, frozenset)):
+        return sorted((_jsonable(item) for item in value), key=lambda item: json.dumps(item, sort_keys=True))
+    if isinstance(value, (list, tuple)):
+        return [_jsonable(item) for item in value]
+    return value
+
+
+def _integrity_hash(certificate: Certificate) -> str:
+    payload = _jsonable(certificate)
+    payload["integrity_hash"] = ""
+    material = json.dumps(payload, sort_keys=True, separators=(",", ":"), ensure_ascii=False)
+    return hashlib.sha256(material.encode("utf-8")).hexdigest()
 
 
 class CertificateChecker:
@@ -73,22 +103,68 @@ class CertificateChecker:
             else "declassify" if scope == "declassify"
             else "action_safety"
         )
-        scope_hash = hashlib.sha256(json.dumps(sorted(sink_versions)).encode()).hexdigest()
+        scope_material = json.dumps(
+            {"scope": scope, "sink_versions": sorted(sink_versions)},
+            sort_keys=True,
+            separators=(",", ":"),
+        )
+        scope_hash = hashlib.sha256(scope_material.encode()).hexdigest()
+        policy_material = json.dumps(
+            {
+                "policy_version": snapshot.policy_version,
+                "component_versions": list(snapshot.component_versions),
+            },
+            sort_keys=True,
+            separators=(",", ":"),
+        )
+        policy_hash = hashlib.sha256(policy_material.encode()).hexdigest()
+        open_restricted = horizon_closure == "open" and certificate_kind in {
+            "recovery_safety", "retention", "release", "declassify"
+        }
         cert = Certificate(
             run_id, snapshot.snapshot_hash, scope, frozenset(sink_versions),
-            frozenset(blocked_versions), result.status, completeness,
+            frozenset(blocked_versions),
+            "UNKNOWN" if open_restricted else result.status,
+            "HORIZON_OPEN" if open_restricted else completeness,
             certificate_kind=certificate_kind, pre_snapshot_hash=snapshot.snapshot_hash,
-            post_state_hash=snapshot.snapshot_hash, scope_hash=scope_hash,
-            completeness_evidence="full_enumeration" if result.exhaustive else "budget_bounded",
+            post_state_hash=snapshot.snapshot_hash, policy_hash=policy_hash,
+            scope_hash=scope_hash, selected_interventions=tuple(sorted(blocked_versions)),
+            completeness_evidence=(
+                "open_horizon_diagnostic" if open_restricted
+                else "full_enumeration" if result.exhaustive
+                else "budget_bounded"
+            ),
             horizon_closure=horizon_closure, issued_at=time.time(),
             reissue_policy=reissue_policy,
         )
+        return self.finalize(cert)
+
+    def finalize(self, certificate: Certificate) -> Certificate:
+        """Seal the entire payload and persist that exact payload in the Ledger.
+
+        Verification checks both the canonical digest and the presence of the
+        same digest in the run Ledger. A caller therefore cannot mutate a field
+        and make the certificate authoritative by merely recomputing a hash.
+        """
+        sealed = replace(certificate, integrity_hash="")
+        sealed = replace(sealed, integrity_hash=_integrity_hash(sealed))
+        payload = _jsonable(sealed)
+        existing = self.ledger.list_certificates(sealed.run_id)
+        for row in existing:
+            if row["certificate_hash"] != sealed.integrity_hash:
+                continue
+            if row["payload"] != payload:
+                raise ValueError("certificate hash collision with different payload")
+            return sealed
         self.ledger.store_certificate(
-            hashlib.sha256(json.dumps(cert.__dict__, sort_keys=True, default=str).encode()).hexdigest(),
-            run_id, certificate_kind, snapshot.snapshot_hash, snapshot.snapshot_hash,
-            cert.__dict__,
+            sealed.integrity_hash,
+            sealed.run_id,
+            sealed.certificate_kind,
+            sealed.pre_snapshot_hash,
+            sealed.post_state_hash,
+            payload,
         )
-        return cert
+        return sealed
 
     def issue_release(self, graph: ProvenanceGraph, *, run_id: str,
                       release_versions: set[str], blocked_versions: set[str],
@@ -120,13 +196,24 @@ class CertificateChecker:
             raise ValueError("reissue policy expired")
         if not self.verify(certificate, graph):
             raise ValueError("certificate no longer verifies")
-        return replace(
+        renewed = replace(
             certificate,
             issued_at=time.time(),
             reissue_count=certificate.reissue_count + 1,
+            integrity_hash="",
         )
+        return self.finalize(renewed)
 
     def verify(self, certificate: Certificate, graph: ProvenanceGraph) -> bool:
+        if _integrity_hash(certificate) != certificate.integrity_hash:
+            return False
+        stored = self.ledger.list_certificates(certificate.run_id)
+        if not any(
+            row["certificate_hash"] == certificate.integrity_hash
+            and row["payload"] == _jsonable(certificate)
+            for row in stored
+        ):
+            return False
         current = self.ledger.snapshot(certificate.run_id)
         expected_snapshot = certificate.post_state_hash or certificate.snapshot_hash
         if current.snapshot_hash != expected_snapshot or not certificate.valid:
@@ -134,6 +221,23 @@ class CertificateChecker:
         if certificate.graph_role != "conservative":
             return False
         if certificate.horizon_closure == "open" and certificate.certificate_kind in {"recovery_safety", "retention", "release", "declassify"}:
+            return False
+        scope_material = json.dumps(
+            {"scope": certificate.scope, "sink_versions": sorted(certificate.sink_versions)},
+            sort_keys=True,
+            separators=(",", ":"),
+        )
+        if certificate.scope_hash != hashlib.sha256(scope_material.encode()).hexdigest():
+            return False
+        policy_material = json.dumps(
+            {
+                "policy_version": current.policy_version,
+                "component_versions": list(current.component_versions),
+            },
+            sort_keys=True,
+            separators=(",", ":"),
+        )
+        if certificate.policy_hash != hashlib.sha256(policy_material.encode()).hexdigest():
             return False
         result = self.residual.check(graph, sink_versions=set(certificate.sink_versions), blocked_versions=set(certificate.blocked_versions))
         return result.status == "COVERED" and result.exhaustive

@@ -28,6 +28,7 @@ class _DenyAllPolicy(DeterministicPolicy):
 class RuntimeMethodAdapter:
     method_id: str
     policy_mode: str = "deterministic"
+    boundary_mode: str = "asymmetric"
     version: str = "runtime-v1"
     applicable_layers: frozenset[str] = frozenset({"E"})
     cost_components: tuple[str, ...] = ("C_op", "L_task", "C_replay", "C_human")
@@ -63,9 +64,28 @@ class RuntimeMethodAdapter:
 
     async def prepare(self, context, config) -> None:
         self.ensure_available(context.manifest.layer)
+        if self.boundary_mode == "none":
+            context.gateway.bind_boundary_repair(None)
+        elif self.boundary_mode != "asymmetric":
+            from app.experiments.baseline_boundaries import build_boundary_strategy
+
+            context.gateway.bind_boundary_repair(
+                build_boundary_strategy(self.boundary_mode, context)
+            )
         context.ledger.increment_metric(context.manifest.run_id, f"method:{self.method_id}", 1)
 
-    async def execute(self, engine, config, *, label_sink=None):
+    async def execute(self, engine, config, *, label_sink=None, context=None):
+        if bool((config.metadata or {}).get("formal_e2e_case")):
+            if context is None:
+                raise RuntimeError("formal E2E execution requires the RunContext")
+            from app.research.e2e.workload import execute_formal_case
+
+            return await execute_formal_case(
+                context=context,
+                llm_client=engine.llm_client,
+                config=config,
+                label_sink=label_sink,
+            )
         return await engine.run_experiment(config, label_sink=label_sink)
 
     async def collect(self, context, events, metrics):
@@ -109,18 +129,44 @@ class MethodRegistry:
         ]
 
 
+FORMAL_E_METHOD_IDS = (
+    "b0_no_defense",
+    "deny_all",
+    "full_reset",
+    "b1_frozen_majd_guard",
+    "b7_faithful",
+    "b9_naive_compose",
+    "raise_conservative",
+    "raise_asymmetric_v1",
+)
+
+
 METHOD_REGISTRY = MethodRegistry()
 METHOD_REGISTRY.register(RuntimeMethodAdapter("raise_asymmetric_v1"))
-METHOD_REGISTRY.register(RuntimeMethodAdapter("b1_conservative"))
-METHOD_REGISTRY.register(RuntimeMethodAdapter("b0_no_defense", "allow_all"))
-METHOD_REGISTRY.register(RuntimeMethodAdapter("deny_all", "deny_all"))
+METHOD_REGISTRY.register(RuntimeMethodAdapter("b1_conservative", boundary_mode="none"))
+METHOD_REGISTRY.register(RuntimeMethodAdapter(
+    "b0_no_defense", policy_mode="allow_all", boundary_mode="none"
+))
+METHOD_REGISTRY.register(RuntimeMethodAdapter(
+    "deny_all", policy_mode="deny_all", boundary_mode="none"
+))
+METHOD_REGISTRY.register(RuntimeMethodAdapter(
+    "full_reset", boundary_mode="full_reset", applicable_layers=frozenset({"M", "E"})
+))
+METHOD_REGISTRY.register(RuntimeMethodAdapter(
+    "b1_frozen_majd_guard", boundary_mode="none", version="majd-guard-frozen-v1"
+))
+METHOD_REGISTRY.register(RuntimeMethodAdapter(
+    "b9_naive_compose", boundary_mode="naive_compose",
+    applicable_layers=frozenset({"M", "E"}), version="three-stage-v1"
+))
+METHOD_REGISTRY.register(RuntimeMethodAdapter(
+    "raise_conservative", boundary_mode="conservative",
+    applicable_layers=frozenset({"M", "E"}), version="conservative-v1"
+))
 for _method_id, _layers, _reason in (
-    ("full_reset", frozenset({"M", "E"}), "runtime full-reset state strategy is not implemented"),
-    ("b1_frozen_majd_guard", frozenset({"E"}), "frozen legacy component/version bundle is not present"),
-    ("b7_simplified", frozenset({"M", "E"}), "M-layer code is not yet adapted to the formal runtime"),
+    ("b7_simplified", frozenset({"M", "E"}), "simplified rollback is not part of the frozen eight-method E matrix"),
     ("b7_faithful", frozenset({"E"}), "faithful paper implementation and version pin are not present"),
-    ("b9_naive_compose", frozenset({"M", "E"}), "M-layer composition is not yet adapted to the formal runtime"),
-    ("raise_conservative", frozenset({"M", "E"}), "conservative-only boundary strategy is not implemented"),
 ):
     METHOD_REGISTRY.register(RuntimeMethodAdapter(
         method_id=_method_id,

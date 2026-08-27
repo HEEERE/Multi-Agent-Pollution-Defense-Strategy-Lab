@@ -26,7 +26,7 @@ from app.research.scale.analysis import (
 )
 from app.research.scale.baselines import Outcome, RepairPolicy, score
 from app.research.scale.checker import IndependentChecker
-from app.research.scale.graph import Hypergraph, VersionKind
+from app.research.scale.graph import Hypergraph, InterventionKind, VersionKind
 from app.research.scale.solvers import greedy_cover
 
 
@@ -94,7 +94,9 @@ class RAISEResult:
 
 
 def _propose_retention(
-    tight_g: Hypergraph, selected: set[str]
+    tight_g: Hypergraph,
+    conservative_g: Hypergraph,
+    selected: set[str],
 ) -> list[RetentionCandidate]:
     """Enumerate contaminated-unreachable versions from the tight graph.
 
@@ -102,7 +104,23 @@ def _propose_retention(
     never be the final authority on what is retained — the conservative
     graph and independent checker own that decision.
     """
-    revoked = removed_versions(tight_g, selected)
+    # Intervention ids are catalogue-local. P1 normally has more derivations
+    # than P0 and therefore a different opaque iid sequence. Retention proposal
+    # needs only the versions removed by revoke/quarantine, so translate those
+    # two kinds by semantic (kind, target); edge/deny ids stay P1-local.
+    revoked: set[str] = set()
+    for iid in selected:
+        intervention = conservative_g.interventions[iid]
+        if intervention.kind is InterventionKind.REVOKE_VERSION:
+            if intervention.target in tight_g.versions:
+                revoked.add(intervention.target)
+        elif intervention.kind is InterventionKind.QUARANTINE_AGENT:
+            revoked.update(
+                version.vid
+                for version in tight_g.versions.values()
+                if version.agent == intervention.target
+                and version.kind is not VersionKind.ARGUMENT
+            )
     ce = clean_e(tight_g, revoked)
     reach = sink_reachable(tight_g, removed_versions=revoked)
     non_arg = {
@@ -204,7 +222,7 @@ def raise_solve(
     selected = set(solve_result.selected)
 
     # Step 3 — P0 proposes retention candidates
-    candidates = _propose_retention(tight_g, selected)
+    candidates = _propose_retention(tight_g, conservative_g, selected)
 
     # Step 4 — P1 vetoes
     certified_retained = _veto(conservative_g, candidates, selected)
